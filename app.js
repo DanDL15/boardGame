@@ -162,8 +162,8 @@ function cacheDom() {
   dom.streakRows = document.querySelector("#streakRows");
   dom.h2hTable = document.querySelector("#h2hTable");
   dom.formChart = document.querySelector("#formRows");
-  dom.sbUrl = document.querySelector("#sbUrl");
-  dom.sbKey = document.querySelector("#sbKey");
+  dom.ghToken = document.querySelector("#ghToken");
+  dom.ghRepo = document.querySelector("#ghRepo");
   dom.syncConnectButton = document.querySelector("#syncConnectButton");
   dom.syncDisconnectButton = document.querySelector("#syncDisconnectButton");
   dom.syncPushButton = document.querySelector("#syncPushButton");
@@ -405,6 +405,7 @@ function normalizeSession(candidate) {
     mode,
     teams,
     notes: String(candidate.notes || "").trim().slice(0, 500),
+    updated: String(candidate.updated || ""),
     results,
   };
 }
@@ -1756,6 +1757,7 @@ function handleGameSubmit(event) {
     mode: formMode,
     teams: formMode === "teams" ? names : { A: "Team A", B: "Team B" },
     notes: dom.notesInput.value.trim(),
+    updated: new Date().toISOString(),
     results: rows.map((row) => ({
       player: row.player,
       position: row.position,
@@ -2024,29 +2026,33 @@ function showToast(message, options) {
   toastTimer = window.setTimeout(() => dom.toast.classList.remove("visible"), undoable ? 6500 : 2800);
 }
 
-/* ═══════════════════════════════ SHARED BOARD (Supabase) ═══════════════════════════════
-   Browsers can't talk to each other, so live sync needs one shared database.
-   This adapter speaks to a free Supabase project (plain REST — no library needed):
+/* ═══════════════════════════════ SHARED BOARD (GitHub) ═══════════════════════════════
+   Browsers can't talk to each other, so live sync needs one shared home for the
+   scores. That home is this repo itself: `data/board.json`, read and written
+   through the GitHub Contents API with a fine-grained token stored per device.
 
-     tower_meta     one row, id = 1: { players, scoring, gameEmoji, updated_at }
-     tower_sessions one row per session: { id, date, game, mode, teams, notes, results, updated_at }
-
-   Keys live in per-device localStorage (never in exports). Last writer wins per
-   row by updated_at. When disconnected everything works exactly as before.
+   - No new accounts, no server, no build step. The token lives in per-device
+     localStorage (never in exports, never in the repo).
+   - Push merges by session id (newest `updated` wins), so two flatmates logging
+     at once don't wipe each other out — and a pull-then-push means the shared
+     file only ever gains sessions.
+   - Devices pull every 15 seconds and push ~2 seconds after any change.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const REMOTE_KEY = "tower-remote-v1";
+const DATA_PATH = "data/board.json";
 let remote = null;
 let remoteTimer = 0;
 let pushTimer = 0;
 let lastPullAt = 0;
+let lastRemoteSha = "";
 
 function loadRemoteCreds() {
   try {
     const raw = window.localStorage.getItem(REMOTE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.url && parsed.key) return parsed;
+    if (parsed && parsed.token && parsed.repo) return { token: parsed.token, repo: parsed.repo };
   } catch (error) {
     console.warn("Could not read remote credentials", error);
   }
@@ -2055,8 +2061,8 @@ function loadRemoteCreds() {
 
 function initSync() {
   remote = loadRemoteCreds();
-  if (dom.sbUrl && remote) dom.sbUrl.value = remote.url;
-  if (dom.sbKey && remote) dom.sbKey.value = remote.key;
+  if (dom.ghToken && remote) dom.ghToken.value = remote.token;
+  if (dom.ghRepo && remote && remote.repo) dom.ghRepo.value = remote.repo;
   if (remote) {
     setSyncMessage("Connected — pulling the shared board…");
     pullFromRemote(true);
@@ -2089,28 +2095,45 @@ function updateSyncStatus() {
   }
 }
 
-function sbHeaders(key) {
-  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+function ghHeaders() {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${remote.token}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function ghContentsUrl() {
+  return `https://api.github.com/repos/${remote.repo}/contents/${DATA_PATH}`;
+}
+
+function encodeBoard(value) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(value))));
+}
+
+function decodeBoard(content) {
+  return JSON.parse(decodeURIComponent(escape(atob(String(content).replace(/\s/g, "")))));
 }
 
 function connectSync() {
-  const url = dom.sbUrl.value.trim().replace(/\/+$/, "");
-  const key = dom.sbKey.value.trim();
-  if (!/^https:\/\/.+\.supabase\.co$/.test(url)) {
-    setSyncMessage("That URL doesn't look like a Supabase project (https://xyz.supabase.co).", "error");
+  const token = dom.ghToken.value.trim();
+  const repo = dom.ghRepo.value.trim().replace(/\/+$/, "");
+  if (!/^(github_pat_|ghp_)/.test(token) || token.length < 20) {
+    setSyncMessage("Paste a GitHub token (starts github_pat_… or ghp_…). See the README for the 2-minute setup.", "error");
     return;
   }
-  if (key.length < 20) {
-    setSyncMessage("Paste the anon key from your Supabase dashboard.", "error");
+  if (!/^[^/]+\/[^/]+$/.test(repo)) {
+    setSyncMessage("Repo should look like DanDL15/boardGame.", "error");
     return;
   }
-  remote = { url, key };
+  remote = { token, repo };
   try {
     window.localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
   } catch (error) {
-    setSyncMessage("Could not save credentials in this browser.", "error");
+    setSyncMessage("Could not save the token in this browser.", "error");
     return;
   }
+  lastRemoteSha = "";
   setSyncMessage("Connected — pulling the shared board…");
   updateSyncStatus();
   pullFromRemote(true);
@@ -2146,32 +2169,78 @@ function pushToRemote() {
   pushTimer = window.setTimeout(() => pushNow(), 2000);
 }
 
+/* Merge two session lists by id — newest `updated` wins each id. */
+function mergeSessions(local, incoming) {
+  const byId = new Map();
+  for (const session of local) byId.set(session.id, session);
+  for (const session of incoming) {
+    const current = byId.get(session.id);
+    if (!current || String(session.updated || "") >= String(current.updated || "")) {
+      byId.set(session.id, session);
+    }
+  }
+  return [...byId.values()].sort(compareSessions);
+}
+
 async function pushNow() {
   if (!remote) return;
   try {
-    const stamp = new Date().toISOString();
-    await fetch(`${remote.url}/rest/v1/tower_meta`, {
-      method: "POST",
-      headers: { ...sbHeaders(remote.key), Prefer: "resolution=merge-duplicates" },
+    // Pull first so simultaneous loggers merge instead of overwriting.
+    const getRes = await fetch(ghContentsUrl(), { headers: ghHeaders() });
+    let sha = "";
+    let remoteSessions = [];
+    let remoteDoc = null;
+    if (getRes.status === 200) {
+      const file = await getRes.json();
+      sha = file.sha || "";
+      lastRemoteSha = sha;
+      try {
+        remoteDoc = decodeBoard(file.content);
+        if (remoteDoc && Array.isArray(remoteDoc.sessions)) remoteSessions = remoteDoc.sessions;
+      } catch (error) {
+        console.warn("Shared file unreadable, will overwrite", error);
+      }
+    } else if (getRes.status !== 404) {
+      throw new Error(`GitHub said ${getRes.status} — is the token right?`);
+    }
+
+    const merged = normalizeState({
+      players: state.players,
+      scoring: state.scoring,
+      gameEmoji: state.gameEmoji,
+      sessions: mergeSessions(remoteSessions, state.sessions),
+    });
+    state = merged;
+    saveStateLocalOnly();
+
+    const payload = {
+      ...state,
+      syncedAt: new Date().toISOString(),
+      sessions: state.sessions,
+    };
+    const putRes = await fetch(ghContentsUrl(), {
+      method: "PUT",
+      headers: ghHeaders(),
       body: JSON.stringify({
-        id: 1,
-        players: state.players,
-        scoring: state.scoring,
-        gameEmoji: state.gameEmoji,
-        updated_at: stamp,
+        message: `Tower sync: ${state.sessions.length} sessions`,
+        content: encodeBoard(payload),
+        ...(sha ? { sha } : {}),
       }),
     });
-    for (const session of state.sessions) {
-      await fetch(`${remote.url}/rest/v1/tower_sessions`, {
-        method: "POST",
-        headers: { ...sbHeaders(remote.key), Prefer: "resolution=merge-duplicates" },
-        body: JSON.stringify({ ...session, updated_at: stamp }),
-      });
+    if (putRes.status === 422 || putRes.status === 409) {
+      // Someone beat us to it — pull their change and try once more.
+      await pullFromRemote(false);
+      await pushNow();
+      return;
     }
-    setSyncMessage(`Pushed ${state.sessions.length} sessions to the shared board.`);
+    if (!putRes.ok) throw new Error(`GitHub said ${putRes.status}.`);
+    const written = await putRes.json();
+    lastRemoteSha = (written.content && written.content.sha) || lastRemoteSha;
+    setSyncMessage(`Shared board live — ${state.sessions.length} sessions.`);
+    renderDashboard();
   } catch (error) {
     console.warn("Push failed", error);
-    setSyncMessage("Push failed — check your connection. Your games are still safe here.", "error");
+    setSyncMessage(`Push failed (${error.message}). Your games are still safe here.`, "error");
   }
 }
 
@@ -2183,23 +2252,31 @@ async function pushToRemoteNow() {
 async function pullFromRemote(announce) {
   if (!remote) return;
   try {
-    const metaRes = await fetch(`${remote.url}/rest/v1/tower_meta?id=eq.1&select=*`, {
-      headers: sbHeaders(remote.key),
-    });
-    const metaRows = await metaRes.json();
-    const sessionsRes = await fetch(`${remote.url}/rest/v1/tower_sessions?select=*&order=date.asc`, {
-      headers: sbHeaders(remote.key),
-    });
-    const sessionRows = await sessionsRes.json();
-    if (!Array.isArray(sessionRows)) throw new Error("Unexpected response from the shared board.");
+    const res = await fetch(ghContentsUrl(), { headers: ghHeaders() });
+    if (res.status === 404) {
+      // No shared file yet — this device seeds it.
+      if (announce) setSyncMessage("No shared file yet — pushing this device up…");
+      await pushNow();
+      if (announce) {
+        setSyncMessage(`Shared board live — ${state.sessions.length} sessions.`);
+        showToast("Shared board synced.");
+      }
+      return;
+    }
+    if (!res.ok) throw new Error(`GitHub said ${res.status}.`);
+    const file = await res.json();
+    if (file.sha === lastRemoteSha) return; // nothing new
+    lastRemoteSha = file.sha || lastRemoteSha;
+    const doc = decodeBoard(file.content);
+    if (!doc || !Array.isArray(doc.sessions)) throw new Error("The shared file doesn't look like a Tower board.");
 
     const merged = normalizeState({
-      players: metaRows && metaRows[0] ? metaRows[0].players : state.players,
-      scoring: metaRows && metaRows[0] ? metaRows[0].scoring : state.scoring,
-      gameEmoji: metaRows && metaRows[0] ? metaRows[0].gameEmoji : state.gameEmoji,
-      sessions: sessionRows,
+      players: Array.isArray(doc.players) && doc.players.length ? doc.players : state.players,
+      scoring: doc.scoring || state.scoring,
+      gameEmoji: doc.gameEmoji || state.gameEmoji,
+      sessions: mergeSessions(state.sessions, doc.sessions),
     });
-    // Don't clobber an in-progress edit with a background pull.
+    // Don't clobber a half-filled form with a background pull.
     const localDraft = readFormDraft();
     state = merged;
     lastPullAt = Date.now();
@@ -2216,7 +2293,7 @@ async function pullFromRemote(announce) {
     }
   } catch (error) {
     console.warn("Pull failed", error);
-    if (announce) setSyncMessage("Could not reach the shared board — still showing this device.", "error");
+    if (announce) setSyncMessage(`Could not reach the shared board (${error.message}) — still showing this device.`, "error");
   }
 }
 

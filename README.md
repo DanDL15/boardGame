@@ -95,44 +95,33 @@ Out of the box everything is stored in your browser's `localStorage`:
 **Use _Export_ before switching devices or clearing your browser.** Use _Import_ to restore a
 backup.
 
-## ☁️ One shared live board (10-minute setup)
+## ☁️ One shared live board (2-minute setup)
 
-Browsers can't talk to each other, so instant phone ↔ laptop sync needs one shared database.
-The app speaks to a free **Supabase** project — no server code, no build step:
+Browsers can't talk to each other, so instant phone ↔ laptop sync needs one shared home for
+the scores. That home is this repo itself — `data/board.json` — read and written through the
+GitHub API. No new accounts, no new services, no server code:
 
-1. Create a free project at <https://supabase.com> (one per flat, not per person).
-2. Open the **SQL Editor** and run:
-   ```sql
-   create table tower_meta (
-     id int primary key,
-     players jsonb not null,
-     scoring jsonb not null,
-     "gameEmoji" jsonb not null,
-     updated_at timestamptz not null default now()
-   );
-   create table tower_sessions (
-     id text primary key,
-     date date not null,
-     game text not null,
-     mode text not null default 'solo',
-     teams jsonb not null default '{"A":"Team A","B":"Team B"}',
-     notes text not null default '',
-     results jsonb not null,
-     updated_at timestamptz not null default now()
-   );
-   alter table tower_meta enable row level security;
-   alter table tower_sessions enable row level security;
-   create policy "open" on tower_meta for all using (true) with check (true);
-   create policy "open" on tower_sessions for all using (true) with check (true);
-   ```
-   (Open policies because the anon key ships in the page — fine for a flat's game scores,
-   never for secrets.)
-3. On each device, open the Tower → **Vault → Shared Board**, paste the project URL and
-   **anon** key, and tap **Connect**. Then tap **Push this device ↑** once from the device
-   with the real history.
+1. Create a **fine-grained personal access token**:
+   - GitHub → your avatar → **Settings → Developer settings → Personal access tokens →
+     Fine-grained tokens → Generate new token**.
+   - Name it `tower-board`, expiry whatever you like, **Repository access → Only select
+     repositories → `DanDL15/boardGame`**.
+   - Under **Permissions → Repository permissions**, set **Contents → Read and write**.
+     Nothing else. Generate and copy it (it starts `github_pat_…`).
+2. On your laptop, open the Tower → **Vault → Shared Board**, paste the token, check the repo
+   reads `DanDL15/boardGame`, tap **Connect**, then **Push this device ↑** once. This creates
+   `data/board.json` from the history you already have.
+3. On your phone (and every other device), open the Tower → **Vault → Shared Board**, paste
+   the **same token**, tap **Connect**. The shared board pulls in within seconds.
 
-After that every save pushes within ~2 seconds and every device pulls every 15 seconds.
-Keys stay on each device and are never included in exports.
+After that every log, edit, or remove pushes within ~2 seconds and every device pulls every
+15 seconds — and pushes merge by session, so two flatmates logging at once don't wipe each
+other out. The token stays on each device and is never included in exports. Tokens are
+revocable any time under Developer settings.
+
+> The repo is public, so `data/board.json` is readable by anyone with the link — it's game
+> scores, but go in with eyes open. If that bothers you, make the repo private (Pages still
+> works) and the file is only writable with the token.
 
 ## 🚀 Run it locally
 
@@ -197,7 +186,7 @@ Colours, spacing, and the whole torch-lit palette live in the `:root` block at t
 | --- | --- |
 | `index.html` | The single page — five tabs |
 | `styles.css` | The Tower theme, design tokens, responsive layout |
-| `app.js` | State, rendering, validation, teams, stats, Supabase sync, import/export |
+| `app.js` | State, rendering, validation, teams, stats, GitHub sync, import/export |
 | `assets/tower-bg.jpg` | The tower painting, compressed for phones |
 | `404.html` | Redirects stray URLs to the dashboard |
 | `dev/dom-stub.js` | Minimal DOM used by the self-test |

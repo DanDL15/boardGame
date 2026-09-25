@@ -259,7 +259,7 @@
                 <span class="summary-icon" aria-hidden="true">◈</span>
                 <span>
                   <span class="summary-title">Shared Board</span>
-                  <span class="summary-subtitle">One live scoreboard for all five phones. Needs a free Supabase project.</span>
+                  <span class="summary-subtitle">One live scoreboard for all five phones. Uses your own repo — no new accounts.</span>
                 </span>
               </span>
               <span class="summary-chevron" aria-hidden="true">⌄</span>
@@ -269,19 +269,19 @@
                 <p class="mini-label">Live sync</p>
                 <h3>Share Across Devices</h3>
                 <p class="muted-copy">
-                  This page alone cannot sync — browsers can't talk to each other. Paste Supabase
-                  credentials once per device and every log appears everywhere within seconds.
-                  Keys stay on your device, never in the backup file. See the README for the
-                  10-minute setup.
+                  This page alone cannot sync — browsers can't talk to each other. The scores live
+                  in your own repo (<code>data/board.json</code>), and each device reads and writes
+                  it with a GitHub token you paste once per device. No new accounts, no new
+                  services. The token stays on your device, never in the backup file.
                 </p>
                 <div class="sync-grid">
                   <div class="setup-field">
-                    <label for="sbUrl">Project URL</label>
-                    <input class="field" id="sbUrl" type="url" placeholder="https://xyz.supabase.co" autocomplete="off" />
+                    <label for="ghToken">GitHub token (fine-grained, this repo only)</label>
+                    <input class="field" id="ghToken" type="password" placeholder="github_pat_…" autocomplete="off" />
                   </div>
                   <div class="setup-field">
-                    <label for="sbKey">Anon key</label>
-                    <input class="field" id="sbKey" type="password" placeholder="eyJ…" autocomplete="off" />
+                    <label for="ghRepo">Repo</label>
+                    <input class="field" id="ghRepo" type="text" value="DanDL15/boardGame" autocomplete="off" />
                   </div>
                 </div>
                 <div class="settings-buttons">

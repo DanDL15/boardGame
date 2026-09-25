@@ -380,5 +380,19 @@ if (!FATAL) {
   assert(document.querySelector("#streakRows").children.length === 5, "streak rows render for all five");
   assert(document.querySelector("#h2hTable").children.length === 6, "head-to-head renders header plus five rows");
   assert(document.querySelector("#formRows").children.length > 0, "points-over-time chart renders");
+
+  /* ═════ SHARED-BOARD MERGE (offline logic — no network) ═════ */
+  var localSess = [{ id: "m1", date: "2025-09-01", game: "Uno", mode: "solo", teams: { A: "Team A", B: "Team B" }, notes: "old", updated: "2025-09-01T10:00:00.000Z", results: [{ player: state.players[0].name, position: 1, points: 5, team: null }] }];
+  var incomingSess = [
+    { id: "m1", date: "2025-09-01", game: "Uno", mode: "solo", teams: { A: "Team A", B: "Team B" }, notes: "new", updated: "2025-09-02T10:00:00.000Z", results: [{ player: state.players[0].name, position: 1, points: 5, team: null }] },
+    { id: "m2", date: "2025-09-03", game: "Uno", mode: "solo", teams: { A: "Team A", B: "Team B" }, notes: "", updated: "", results: [{ player: state.players[1].name, position: 1, points: 5, team: null }] },
+  ];
+  var merged = mergeSessions(localSess, incomingSess);
+  assert(merged.length === 2, "merge unions sessions by id (got " + merged.length + ")");
+  assert(merged.filter(function (s) { return s.id === "m1"; })[0].notes === "new",
+    "merge keeps the newest updated version of a clash");
+  var normUpdated = normalizeState({ players: state.players, scoring: state.scoring, gameEmoji: state.gameEmoji, sessions: incomingSess });
+  assert(normUpdated.sessions.filter(function (s) { return s.id === "m1"; })[0].updated === "2025-09-02T10:00:00.000Z",
+    "export/import round trip preserves updated stamps");
 }
 __log.join("\n")
