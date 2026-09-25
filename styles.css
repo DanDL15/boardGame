@@ -8,25 +8,25 @@
 :root {
   color-scheme: dark;
 
-  /* ── Storm night & ivy stone ── */
-  --night: #0a120d;
-  --stone-900: #0e1712;
-  --stone-800: #132019;
-  --stone-700: #1a2b20;
-  --stone-600: #24402e;
-  --stone-500: #32573f;
-  --iron: #6f7f74;
-  --iron-light: #9db3a4;
+  /* ── Storm night & ivy stone — green-dominant ── */
+  --night: #0b1a11;
+  --stone-900: #0e2415;
+  --stone-800: #14301c;
+  --stone-700: #1c4225;
+  --stone-600: #2a5a33;
+  --stone-500: #3d7346;
+  --iron: #7fa08a;
+  --iron-light: #aec9b4;
 
   /* ── Mist (text) ── */
   --parchment: #eef3ea;
   --parchment-dim: #c3cec0;
-  --parchment-faint: #8b978c;
+  --parchment-faint: #93a094;
 
   /* ── Stirling greens (the accent — Heritage + Energy) ── */
   --leaf: #76b72a;
-  --leaf-bright: #9fcc69;
-  --leaf-pale: #dff0c8;
+  --leaf-bright: #a8d95c;
+  --leaf-pale: #e4f4cb;
   --leaf-deep: #006938;
 
   /* ── Storm slate + ember ── */
@@ -36,14 +36,14 @@
   --royal: #7fa3b8;
 
   --danger: #d4655a;
-  --success: #9fcc69;
+  --success: #a8d95c;
 
-  --surface: rgba(19, 32, 25, 0.88);
-  --surface-solid: #132019;
-  --surface-raised: #1a2b20;
-  --border: rgba(118, 183, 42, 0.22);
-  --border-strong: rgba(118, 183, 42, 0.45);
-  --border-stone: rgba(238, 243, 234, 0.11);
+  --surface: rgba(16, 46, 25, 0.9);
+  --surface-solid: #14301c;
+  --surface-raised: #1c4225;
+  --border: rgba(118, 183, 42, 0.35);
+  --border-strong: rgba(118, 183, 42, 0.6);
+  --border-stone: rgba(238, 243, 234, 0.14);
 
   --shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
   --shadow-soft: 0 14px 38px rgba(0, 0, 0, 0.34);
@@ -92,12 +92,12 @@ body::before {
   z-index: -2;
   content: "";
   background:
-    linear-gradient(180deg, rgba(8, 14, 10, 0.52) 0%, rgba(8, 14, 10, 0.74) 52%, rgba(5, 9, 7, 0.9) 100%),
-    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(118, 183, 42, 0.16), transparent 70%),
-    radial-gradient(ellipse 55% 38% at 10% 42%, rgba(0, 105, 56, 0.22), transparent 65%),
+    linear-gradient(180deg, rgba(0, 105, 56, 0.28) 0%, rgba(8, 26, 14, 0.62) 45%, rgba(4, 12, 7, 0.9) 100%),
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(118, 183, 42, 0.3), transparent 70%),
+    radial-gradient(ellipse 55% 38% at 10% 42%, rgba(0, 105, 56, 0.35), transparent 65%),
     radial-gradient(ellipse 55% 40% at 92% 10%, rgba(127, 163, 184, 0.12), transparent 65%),
     url("assets/tower-bg.jpg"),
-    linear-gradient(180deg, #1a2230 0%, var(--night) 55%, #0a0d12 100%);
+    linear-gradient(180deg, #12351e 0%, var(--night) 55%, #060f08 100%);
   background-size: cover, cover, cover, cover, cover, cover;
   background-position: center 20%, center, center, center, center 20%, center;
   background-repeat: no-repeat;
@@ -221,7 +221,7 @@ ol {
   border-radius: 14px 14px 20px 20px;
   background:
     radial-gradient(circle at 50% 26%, rgba(var(--torch), 0.32), transparent 62%),
-    linear-gradient(160deg, rgba(118, 183, 42, 0.22), rgba(35, 32, 25, 0.92) 62%);
+    linear-gradient(160deg, rgba(118, 183, 42, 0.22), rgba(14, 38, 22, 0.92) 62%);
   box-shadow:
     inset 0 1px 0 rgba(242, 224, 176, 0.22),
     0 10px 26px rgba(0, 0, 0, 0.45),
@@ -279,7 +279,7 @@ ol {
   border: 1px solid var(--border-stone);
   border-radius: 100px;
   padding: 4px;
-  background: rgba(11, 10, 9, 0.4);
+  background: rgba(6, 16, 10, 0.4);
 }
 
 .crest-nav a {
@@ -327,13 +327,13 @@ ol {
 .button-primary {
   border-color: var(--leaf);
   background: linear-gradient(165deg, var(--leaf-bright), var(--leaf) 55%, var(--leaf-deep));
-  box-shadow: 0 8px 22px rgba(118, 183, 42, 0.24), inset 0 1px 0 rgba(255, 246, 214, 0.5);
-  color: #1a1408;
+  box-shadow: 0 8px 22px rgba(118, 183, 42, 0.35), inset 0 1px 0 rgba(228, 244, 203, 0.5);
+  color: #06130a;
   font-weight: 700;
 }
 
 .button-primary:hover {
-  box-shadow: 0 12px 30px rgba(118, 183, 42, 0.36), inset 0 1px 0 rgba(255, 246, 214, 0.6);
+  box-shadow: 0 12px 30px rgba(118, 183, 42, 0.36), inset 0 1px 0 rgba(228, 244, 203, 0.6);
 }
 
 .button-secondary,
@@ -468,7 +468,7 @@ ol {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-md);
   padding: 15px 17px;
-  background: linear-gradient(180deg, rgba(38, 34, 25, 0.72), rgba(18, 16, 14, 0.72));
+  background: linear-gradient(180deg, rgba(16, 44, 26, 0.72), rgba(8, 22, 13, 0.72));
   box-shadow: var(--shadow-carved);
 }
 
@@ -552,7 +552,7 @@ ol {
   border: 1px solid var(--border);
   border-radius: var(--radius-md) var(--radius-md) 4px 4px;
   padding: 20px 14px 16px;
-  background: linear-gradient(180deg, var(--surface-raised), rgba(18, 16, 14, 0.92));
+  background: linear-gradient(180deg, var(--surface-raised), rgba(8, 22, 13, 0.92));
   box-shadow: var(--shadow-soft);
   text-align: center;
   overflow: hidden;
@@ -591,7 +591,7 @@ ol {
 .stone-card.stone-first {
   padding: 34px 18px 28px;
   border-color: var(--border-strong);
-  background: linear-gradient(180deg, rgba(118, 183, 42, 0.18), rgba(35, 32, 25, 0.95) 55%);
+  background: linear-gradient(180deg, rgba(118, 183, 42, 0.18), rgba(14, 38, 22, 0.95) 55%);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(242, 224, 176, 0.2);
 }
 
@@ -610,7 +610,7 @@ ol {
   padding: 3px 11px;
   border: 1px solid var(--border-stone);
   border-radius: 100px;
-  background: rgba(11, 10, 9, 0.6);
+  background: rgba(6, 16, 10, 0.6);
   color: var(--parchment-dim);
   font-family: var(--font-ui);
   font-size: 9.5px;
@@ -633,7 +633,7 @@ ol {
   place-items: center;
   border: 1px solid var(--border-stone);
   border-radius: 50%;
-  background: rgba(11, 10, 9, 0.55);
+  background: rgba(6, 16, 10, 0.55);
   font-size: 31px;
   line-height: 1;
 }
@@ -704,13 +704,13 @@ ol {
   border-left: 3px solid var(--player-color, var(--iron));
   border-radius: var(--radius-sm);
   padding: 12px 16px;
-  background: rgba(26, 23, 20, 0.6);
+  background: rgba(16, 36, 22, 0.6);
   transition: background 160ms ease, border-color 160ms ease;
 }
 
 .roll-row:hover {
   border-color: var(--border);
-  background: rgba(35, 32, 25, 0.85);
+  background: rgba(14, 38, 22, 0.85);
 }
 
 .roll-rank {
@@ -769,7 +769,7 @@ ol {
   border: 1px solid var(--border-stone);
   border-radius: 100px;
   padding: 1px 8px;
-  background: rgba(11, 10, 9, 0.4);
+  background: rgba(6, 16, 10, 0.4);
   color: var(--parchment-faint);
   font-family: var(--font-ui);
   font-size: 10px;
@@ -786,7 +786,7 @@ ol {
   height: 5px;
   margin-top: 8px;
   border-radius: 100px;
-  background: rgba(11, 10, 9, 0.6);
+  background: rgba(6, 16, 10, 0.6);
   overflow: hidden;
 }
 
@@ -892,7 +892,7 @@ ol {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-sm);
   padding: 10px 13px;
-  background: rgba(11, 10, 9, 0.5);
+  background: rgba(6, 16, 10, 0.5);
   color: var(--parchment);
   font-size: 14px;
   transition: border-color 160ms ease, box-shadow 160ms ease;
@@ -964,7 +964,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: 100px;
   padding: 6px 14px;
-  background: rgba(26, 23, 20, 0.7);
+  background: rgba(16, 36, 22, 0.7);
   color: var(--parchment-dim);
   font-family: var(--font-ui);
   font-size: 11.5px;
@@ -1005,13 +1005,13 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-md);
   padding: 10px 16px;
-  background: rgba(11, 10, 9, 0.34);
+  background: rgba(6, 16, 10, 0.34);
   transition: border-color 160ms ease, background 160ms ease;
 }
 
 .stone-row.is-filled {
   border-color: var(--border);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--player-color, var(--iron)) 9%, transparent), rgba(11, 10, 9, 0.34) 55%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--player-color, var(--iron)) 9%, transparent), rgba(6, 16, 10, 0.34) 55%);
 }
 
 .stone-row.is-first.is-filled {
@@ -1115,7 +1115,7 @@ select.field option {
 .stone-row.is-filled .stone-occupant {
   border-style: solid;
   border-color: var(--border-stone);
-  background: rgba(11, 10, 9, 0.45);
+  background: rgba(6, 16, 10, 0.45);
   color: var(--parchment);
 }
 
@@ -1191,7 +1191,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: 7px;
   padding: 4px 6px;
-  background: rgba(11, 10, 9, 0.5);
+  background: rgba(6, 16, 10, 0.5);
   color: var(--leaf-bright);
   font-family: var(--font-display);
   font-size: 16px;
@@ -1238,7 +1238,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: 100px;
   padding: 8px 18px 8px 11px;
-  background: rgba(26, 23, 20, 0.8);
+  background: rgba(16, 36, 22, 0.8);
   color: var(--parchment);
   font-size: 13.5px;
   font-weight: 500;
@@ -1247,7 +1247,7 @@ select.field option {
 
 .pool-chip:hover {
   border-color: var(--player-color, var(--leaf));
-  background: rgba(35, 32, 25, 0.95);
+  background: rgba(14, 38, 22, 0.95);
   transform: translateY(-2px);
 }
 
@@ -1271,7 +1271,7 @@ select.field option {
 
 .pool-chip.is-placed:hover {
   border-color: var(--border-stone);
-  background: rgba(26, 23, 20, 0.8);
+  background: rgba(16, 36, 22, 0.8);
   transform: none;
 }
 
@@ -1309,7 +1309,7 @@ select.field option {
   border-bottom-width: 2px;
   border-radius: 5px;
   padding: 0 5px;
-  background: rgba(11, 10, 9, 0.6);
+  background: rgba(6, 16, 10, 0.6);
   color: var(--parchment-dim);
   font-family: var(--font-ui);
   font-size: 10.5px;
@@ -1383,13 +1383,13 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-md);
   padding: 16px 18px;
-  background: rgba(26, 23, 20, 0.6);
+  background: rgba(16, 36, 22, 0.6);
   transition: border-color 160ms ease, background 160ms ease;
 }
 
 .history-card:hover {
   border-color: var(--border);
-  background: rgba(35, 32, 25, 0.75);
+  background: rgba(14, 38, 22, 0.75);
 }
 
 .history-card-top {
@@ -1450,7 +1450,7 @@ select.field option {
   border-left-width: 3px;
   border-radius: 7px;
   padding: 3px 9px;
-  background: rgba(11, 10, 9, 0.45);
+  background: rgba(6, 16, 10, 0.45);
   color: var(--parchment-dim);
   font-family: var(--font-ui);
   font-size: 11.5px;
@@ -1510,7 +1510,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-md);
   padding: 18px;
-  background: rgba(26, 23, 20, 0.6);
+  background: rgba(16, 36, 22, 0.6);
 }
 
 .game-card-heading {
@@ -1533,7 +1533,7 @@ select.field option {
   place-items: center;
   border: 1px solid var(--border-stone);
   border-radius: 9px;
-  background: rgba(11, 10, 9, 0.5);
+  background: rgba(6, 16, 10, 0.5);
   font-size: 17px;
   line-height: 1;
 }
@@ -1578,7 +1578,7 @@ select.field option {
   grid-column: 1 / -1;
   height: 4px;
   border-radius: 100px;
-  background: rgba(11, 10, 9, 0.55);
+  background: rgba(6, 16, 10, 0.55);
   overflow: hidden;
 }
 
@@ -1716,7 +1716,7 @@ select.field option {
   border-left: 3px solid var(--player-color, var(--leaf));
   border-radius: var(--radius-sm);
   padding: 9px 12px;
-  background: rgba(26, 23, 20, 0.6);
+  background: rgba(16, 36, 22, 0.6);
 }
 
 .roster-swatch {
@@ -1760,7 +1760,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
-  background: rgba(11, 10, 9, 0.5);
+  background: rgba(6, 16, 10, 0.5);
   color: var(--parchment);
   font-size: 13px;
 }
@@ -1782,7 +1782,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-sm);
   padding: 3px;
-  background: rgba(11, 10, 9, 0.5);
+  background: rgba(6, 16, 10, 0.5);
   cursor: pointer;
 }
 
@@ -1837,7 +1837,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: var(--radius-sm);
   padding: 7px 4px;
-  background: rgba(11, 10, 9, 0.5);
+  background: rgba(6, 16, 10, 0.5);
   color: var(--leaf-bright);
   font-family: var(--font-display);
   font-size: 15px;
@@ -1881,7 +1881,7 @@ select.field option {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   padding: 12px 14px 12px 17px;
-  background: linear-gradient(165deg, #2a2418, #1a1714);
+  background: linear-gradient(165deg, #14401f, #0b1a11);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
   color: var(--leaf-pale);
   font-size: 12.5px;
@@ -1929,7 +1929,7 @@ select.field option {
 .toast-undo:hover {
   border-color: var(--leaf);
   background: rgba(118, 183, 42, 0.3);
-  color: #fff6d6;
+  color: #e4f4cb;
 }
 
 .noscript {
@@ -2254,7 +2254,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: 100px;
   padding: 4px;
-  background: rgba(10, 18, 13, 0.82);
+  background: rgba(4, 32, 16, 0.86);
   backdrop-filter: blur(10px);
   overflow-x: auto;
 }
@@ -2302,7 +2302,7 @@ select.field option {
   width: min(560px, 110%);
   height: 110%;
   transform: translateX(-50%);
-  color: rgba(118, 183, 42, 0.14);
+  color: rgba(118, 183, 42, 0.3);
   pointer-events: none;
 }
 
@@ -2349,7 +2349,7 @@ select.field option {
   border: 1px solid var(--border-stone);
   border-radius: 100px;
   padding: 3px 12px;
-  background: rgba(10, 18, 13, 0.5);
+  background: rgba(8, 30, 17, 0.5);
   color: var(--parchment-faint);
   font-family: var(--font-ui);
   font-size: 10.5px;
@@ -2448,7 +2448,7 @@ select.field option {
 }
 
 .h2h-table th {
-  background: rgba(10, 18, 13, 0.5);
+  background: rgba(8, 30, 17, 0.5);
   color: var(--parchment-dim);
   font-family: var(--font-ui);
   font-size: 10.5px;
