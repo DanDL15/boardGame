@@ -10,11 +10,11 @@ const POSITION_META = [
 ];
 const DEFAULT_SCORING = Object.freeze({ 1: 5, 2: 3, 3: 2, 4: 0, 5: 0 });
 const DEFAULT_PLAYERS = Object.freeze([
-  { name: "Daniel", emoji: "🎩", color: "#4f8cff" },
-  { name: "Emily", emoji: "🌸", color: "#ff6b9d" },
-  { name: "Hector", emoji: "🦜", color: "#2ecc71" },
-  { name: "Ben", emoji: "🐻", color: "#f5a623" },
-  { name: "Amy", emoji: "⭐", color: "#a55eea" },
+  { name: "Daniel", emoji: "🎩", color: "#4a6fb5" },
+  { name: "Emily", emoji: "🌸", color: "#b5546e" },
+  { name: "Hector", emoji: "🦜", color: "#4a7c59" },
+  { name: "Ben", emoji: "🐻", color: "#a8763a" },
+  { name: "Amy", emoji: "⭐", color: "#6b5aa8" },
 ]);
 const DEFAULT_GAME_EMOJI = Object.freeze({
   "Monopoly Duel": "🏠",
@@ -67,6 +67,10 @@ let state;
 let formRows = [];
 let toastTimer;
 let editingSessionId = null;
+/* Which finishing place the next player tap lands in. null = "the next open place". */
+let aimedPosition = null;
+/* Last destructive action, so the toast can offer a real undo. */
+let undoSnapshot = null;
 
 const dom = {};
 
@@ -90,14 +94,9 @@ function cacheDom() {
   dom.newGameInput = document.querySelector("#newGameInput");
   dom.gameDate = document.querySelector("#gameDate");
   dom.notesInput = document.querySelector("#notesInput");
-  dom.resultsRows = document.querySelector("#resultsRows");
-  dom.previewTitle = document.querySelector("#previewTitle");
-  dom.previewList = document.querySelector("#previewList");
-  dom.formMessage = document.querySelector("#formMessage");
-  dom.logButton = document.querySelector("#logButton");
-  dom.resetPointsButton = document.querySelector("#resetPointsButton");
-  dom.gamePills = document.querySelector("#gamePills");
-  dom.statsGrid = document.querySelector("#statsGrid");
+  dom.stoneList = document.querySelector("#stoneList");
+  dom.playerPool = document.querySelector("#playerPool");
+  dom.podiumHint = document.querySelector("#podiumHint");
   dom.leaderboardSummary = document.querySelector("#leaderboardSummary");
   dom.podium = document.querySelector("#podium");
   dom.leaderboardRows = document.querySelector("#leaderboardRows");
@@ -114,9 +113,20 @@ function cacheDom() {
   dom.settingsMessage = document.querySelector("#settingsMessage");
   dom.storageStatus = document.querySelector("#storageStatus");
   dom.toast = document.querySelector("#toast");
+  dom.toastText = document.querySelector("#toastText");
   dom.editBanner = document.querySelector("#editBanner");
   dom.editBannerText = document.querySelector("#editBannerText");
   dom.cancelEditButton = document.querySelector("#cancelEditButton");
+  dom.logButton = document.querySelector("#logButton");
+  dom.resetPointsButton = document.querySelector("#resetPointsButton");
+  dom.formMessage = document.querySelector("#formMessage");
+  dom.everyonePlayedButton = document.querySelector("#everyonePlayedButton");
+  dom.repeatLastButton = document.querySelector("#repeatLastButton");
+  dom.clearBoardButton = document.querySelector("#clearBoardButton");
+  dom.ledgerStats = document.querySelector("#ledgerStats");
+  dom.undoButton = document.querySelector("#undoButton");
+  dom.rollBlock = document.querySelector("#rollBlock");
+  dom.rollHeading = document.querySelector("#rollHeading");
   dom.rosterList = document.querySelector("#rosterList");
   dom.rosterMessage = document.querySelector("#rosterMessage");
   dom.gameEmojiList = document.querySelector("#gameEmojiList");
@@ -127,8 +137,10 @@ function cacheDom() {
 function bindEvents() {
   dom.gameForm.addEventListener("submit", handleGameSubmit);
   dom.gameSelect.addEventListener("change", handleGameSelectChange);
-  dom.resetPointsButton.addEventListener("click", resetPointFields);
+  dom.resetPointsButton.addEventListener("click", resetAllPoints);
   dom.historyList.addEventListener("click", handleHistoryClick);
+  dom.stoneList.addEventListener("click", handleStoneClick);
+  dom.playerPool.addEventListener("click", handlePoolClick);
   dom.exportButton.addEventListener("click", exportData);
   dom.dataExportButton.addEventListener("click", exportData);
   dom.importButton.addEventListener("click", openImportPicker);
@@ -137,6 +149,31 @@ function bindEvents() {
   dom.clearDataButton.addEventListener("click", clearAllData);
   dom.resetScoringButton.addEventListener("click", resetScoring);
   dom.cancelEditButton.addEventListener("click", cancelEdit);
+  dom.everyonePlayedButton.addEventListener("click", fillEveryonePlayed);
+  dom.repeatLastButton.addEventListener("click", repeatLastGame);
+  dom.clearBoardButton.addEventListener("click", clearBoard);
+  dom.undoButton.addEventListener("click", performUndo);
+
+  // Number keys aim at a place, Escape stands down — so the whole board is
+  // reachable without touching a mouse.
+  dom.gameForm.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === "Escape") {
+      if (aimedPosition === null) return;
+      aimedPosition = null;
+      renderBoard();
+      return;
+    }
+    const digit = Number(event.key);
+    if (!Number.isInteger(digit) || digit < 1 || digit > POSITION_META.length) return;
+    // Don't hijack typing in a text field.
+    const tag = event.target && event.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+      if (event.target.type !== "button") return;
+    }
+    const position = POSITION_META[digit - 1].position;
+    aimAt(aimedPosition === position ? null : position);
+  });
 
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY || !event.newValue) return;
@@ -276,6 +313,12 @@ function roundScore(value) {
   return Math.round(value * 100) / 100;
 }
 
+// 5 stays "5", 2.5 stays "2.5" — no trailing ".00" leaking into the UI.
+function trimNumber(value) {
+  const rounded = roundScore(Number(value) || 0);
+  return Object.is(rounded, -0) ? "0" : String(rounded);
+}
+
 function compareSessions(a, b) {
   return a.date.localeCompare(b.date) || a.id.localeCompare(b.id);
 }
@@ -312,12 +355,9 @@ function updateStorageStatus() {
 
 function renderDashboard() {
   const standings = calculateStandings();
-  renderStats(standings);
-  renderGamePills();
   renderLeaderboard(standings);
   renderPerGameStandings();
   renderHistory();
-  syncPositionHints();
 }
 
 function calculateStandings() {
@@ -352,110 +392,142 @@ function calculateStandings() {
     .sort((a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name));
 }
 
-function renderStats(standings) {
-  const totalPoints = roundScore(state.sessions.reduce((total, session) => total + session.results.reduce((sum, result) => sum + result.points, 0), 0));
-  const gameCount = new Set(state.sessions.map((session) => session.game.toLowerCase())).size;
+function renderLedgerStats(standings) {
+  if (!dom.ledgerStats) return;
+  dom.ledgerStats.replaceChildren();
+
+  const totalGames = state.sessions.length;
+  const gameTypes = new Set(state.sessions.map((s) => s.game.toLowerCase())).size;
+  const totalPoints = roundScore(
+    state.sessions.reduce(
+      (total, session) => total + session.results.reduce((sum, r) => sum + r.points, 0),
+      0
+    )
+  );
   const leader = standings[0];
-  const cards = [
-    { icon: "🎲", value: state.sessions.length, label: "Games logged", color: "#a78bfa" },
-    { icon: "🎮", value: gameCount, label: "Game types", color: "#65e6bd" },
-    { icon: "⭐", value: totalPoints, label: "Points awarded", color: "#ffd166" },
-    { icon: "👑", value: leader ? leader.name : "—", label: "Current leader", color: "#ff8c8c", text: Boolean(leader) },
+  const leaderPlayer = leader ? getPlayer(leader.name) : null;
+
+  const stats = [
+    { label: "Sessions kept", value: String(totalGames) },
+    { label: "Different games", value: String(gameTypes) },
+    { label: "Points awarded", value: trimNumber(totalPoints) },
+    {
+      label: "Reigning champion",
+      value: leader ? leader.name : "—",
+      sub: leader ? `${trimNumber(leader.points)} pts` : "log the first game",
+      color: leaderPlayer ? leaderPlayer.color : null,
+    },
   ];
 
-  dom.statsGrid.replaceChildren();
-  for (const card of cards) {
-    const element = make("article", "stat-card");
-    element.style.setProperty("--stat-color", card.color);
-    element.appendChild(make("span", "stat-icon", card.icon));
-    element.appendChild(make("strong", `stat-value${card.text ? " text-value" : ""}`, String(card.value)));
-    element.appendChild(make("span", "stat-label", card.label));
-    dom.statsGrid.appendChild(element);
-  }
-}
-
-function renderGamePills() {
-  const playedGames = [...new Set(state.sessions.map((session) => session.game))].sort((a, b) => a.localeCompare(b));
-  const games = playedGames.length ? playedGames : Object.keys(DEFAULT_GAME_EMOJI);
-  dom.gamePills.replaceChildren();
-  for (const game of games) {
-    dom.gamePills.appendChild(make("span", "game-pill", `${getGameEmoji(game)} ${game}`));
+  for (const stat of stats) {
+    const tile = make("div", "stat-tile");
+    if (stat.color) tile.style.setProperty("--player-color", stat.color);
+    tile.appendChild(make("span", "stat-value", stat.value));
+    tile.appendChild(make("span", "stat-label", stat.label));
+    if (stat.sub) tile.appendChild(make("span", "stat-sub", stat.sub));
+    dom.ledgerStats.appendChild(tile);
   }
 }
 
 function renderLeaderboard(standings) {
   const totalGames = state.sessions.length;
-  dom.leaderboardSummary.textContent = totalGames
-    ? `${totalGames} game${totalGames === 1 ? "" : "s"} · 1st = ${state.scoring[1]} · 2nd = ${state.scoring[2]} · 3rd = ${state.scoring[3]}`
-    : "No games logged yet — add the first result above.";
+  const leader = standings[0];
+  const challenger = standings[1];
+
+  renderLedgerStats(standings);
+
+  dom.leaderboardSummary.textContent = !totalGames
+    ? "The ledger lies empty — log a session and the crown finds a keeper."
+    : leader && challenger
+      ? `${leader.name} leads by ${trimNumber(roundScore(leader.points - challenger.points))} points over ${challenger.name}.`
+      : leader
+        ? `${leader.name} is the only name in the ledger so far.`
+        : "";
 
   dom.podium.replaceChildren();
   dom.leaderboardRows.replaceChildren();
+  if (dom.rollBlock) dom.rollBlock.hidden = false;
 
   if (!standings.length) {
-    const empty = make("div", "empty-state", "No games logged yet — use the form above to add the first one!");
-    empty.style.gridColumn = "1 / -1";
-    dom.podium.appendChild(empty);
+    dom.podium.appendChild(
+      make("div", "empty-state", "No score has been carved yet. Log a session below and the stones start filling.")
+    );
+    if (dom.rollBlock) dom.rollBlock.hidden = true;
     return;
   }
 
-  const podiumOrder = [standings[1], standings[0], standings[2]];
-  const podiumClasses = ["second", "first", "third"];
-  const podiumLabels = ["2nd", "1st", "3rd"];
-  podiumOrder.forEach((standing, index) => {
-    dom.podium.appendChild(createPodiumCard(standing, podiumClasses[index], podiumLabels[index]));
-  });
+  // Top three as raised stones: 1st centre and tallest, flanked by 2nd and 3rd.
+  const [first, second, third] = standings;
+  dom.podium.appendChild(createStoneCard(first, "stone-first", "1st", true));
+  dom.podium.appendChild(createStoneCard(second, "stone-second", "2nd", false));
+  dom.podium.appendChild(createStoneCard(third, "stone-third", "3rd", false));
 
-  const maxPoints = standings[0].points || 1;
-  standings.forEach((standing, index) => {
-    const row = make("article", "leader-row");
+  // The podium already carries the top three, so the roll starts at fourth.
+  // Listing them again made the page look like the household had six winners.
+  const rest = standings.slice(3);
+  if (!rest.length) {
+    if (dom.rollBlock) dom.rollBlock.hidden = true;
+    return;
+  }
+
+  if (dom.rollHeading) {
+    dom.rollHeading.textContent =
+      standings.length === 4 ? "The Only One Still Waiting" : "The Rest of the Household";
+  }
+
+  // Bars scale against the leader, so the champion's bar is always full width.
+  const maxPoints = first.points || 1;
+  for (const standing of rest) {
+    const rank = standings.indexOf(standing) + 1;
+    const row = make("article", "roll-row");
     row.style.setProperty("--player-color", getPlayer(standing.name).color);
 
-    const rank = make("span", `leader-rank${index < 3 ? ` rank-${index + 1}` : ""}`, String(index + 1));
-    const avatar = make("span", "leader-avatar", getPlayer(standing.name).emoji);
-    const copy = make("div", "leader-copy");
-    const nameLine = make("div", "leader-name-line");
-    nameLine.appendChild(make("span", "leader-name", standing.name));
-    if (index === 0) nameLine.appendChild(make("span", "leader-crown", "👑"));
+    row.appendChild(make("span", "roll-rank", String(rank)));
+    row.appendChild(make("span", "roll-avatar", getPlayer(standing.name).emoji));
+
+    const copy = make("div", "roll-copy");
+    const nameLine = make("div", "roll-name-line");
+    nameLine.appendChild(make("span", "roll-name", standing.name));
     copy.appendChild(nameLine);
 
-    const meta = make("div", "leader-meta");
-    meta.appendChild(make("span", "leader-chip", `${standing.plays} play${standing.plays === 1 ? "" : "s"}`));
-    meta.appendChild(make("span", "leader-chip", `🏆 ${standing.wins}`));
-    meta.appendChild(make("span", "leader-chip", `🥈 ${standing.seconds}`));
-    meta.appendChild(make("span", "leader-chip", `🥉 ${standing.thirds}`));
-    meta.appendChild(make("span", "leader-chip", `${standing.pointsPerPlay} pts/play`));
-    copy.appendChild(meta);
+    const chips = make("div", "roll-chips");
+    chips.appendChild(make("span", "roll-chip", `${standing.plays} play${standing.plays === 1 ? "" : "s"}`));
+    chips.appendChild(make("span", "roll-chip is-wins", `🏆 ${standing.wins}`));
+    chips.appendChild(make("span", "roll-chip", `2nd × ${standing.seconds}`));
+    chips.appendChild(make("span", "roll-chip", `3rd × ${standing.thirds}`));
+    chips.appendChild(make("span", "roll-chip", `${trimNumber(standing.pointsPerPlay)} / play`));
+    copy.appendChild(chips);
 
-    const bar = make("div", "leader-bar");
-    const barFill = document.createElement("span");
-    barFill.style.width = `${Math.max(0, Math.min(100, (standing.points / maxPoints) * 100))}%`;
-    bar.appendChild(barFill);
+    const bar = make("div", "roll-bar");
+    const fill = make("span", "roll-bar-fill");
+    fill.style.width = `${Math.max(0, Math.min(100, (standing.points / maxPoints) * 100))}%`;
+    bar.appendChild(fill);
     copy.appendChild(bar);
 
-    row.append(rank, avatar, copy, make("strong", "leader-points", String(standing.points)));
+    row.append(copy, make("strong", "roll-total", trimNumber(standing.points)));
     dom.leaderboardRows.appendChild(row);
-  });
+  }
 }
 
-function createPodiumCard(standing, className, label) {
-  const card = make("article", `podium-card ${className}`);
-  card.appendChild(make("span", "podium-rank", label));
+function createStoneCard(standing, className, label, crowned) {
+  const card = make("article", `stone-card ${className}`);
   if (!standing) {
-    card.appendChild(make("span", "podium-avatar", "—"));
-    card.appendChild(make("span", "podium-name", "—"));
-    card.appendChild(make("span", "podium-points", "—"));
-    card.appendChild(make("span", "podium-meta", "No result"));
+    card.appendChild(make("span", "stone-rank", label));
+    card.appendChild(make("span", "stone-avatar", "—"));
+    card.appendChild(make("span", "stone-name", "—"));
+    card.appendChild(make("span", "stone-points", "0"));
+    card.appendChild(make("span", "stone-points-label", "points"));
     return card;
   }
 
   const player = getPlayer(standing.name);
   card.style.setProperty("--player-color", player.color);
-  if (className === "first") card.appendChild(make("span", "podium-crown", "👑"));
-  card.appendChild(make("span", "podium-avatar", player.emoji));
-  card.appendChild(make("span", "podium-name", standing.name));
-  card.appendChild(make("span", "podium-points", String(standing.points)));
-  card.appendChild(make("span", "podium-meta", `${standing.wins} win${standing.wins === 1 ? "" : "s"}`));
+  card.appendChild(make("span", "stone-rank", label));
+  if (crowned) card.appendChild(make("span", "stone-crown", "👑"));
+  card.appendChild(make("span", "stone-avatar", player.emoji));
+  card.appendChild(make("span", "stone-name", standing.name));
+  card.appendChild(make("span", "stone-points", trimNumber(standing.points)));
+  card.appendChild(make("span", "stone-points-label", "points"));
   return card;
 }
 
@@ -721,7 +793,6 @@ function renderGameEmojiList() {
     input.addEventListener("input", () => {
       state.gameEmoji[game] = input.value || "🎮";
       saveState();
-      renderGamePills();
       renderHistory();
       renderPerGameStandings();
     });
@@ -730,7 +801,6 @@ function renderGameEmojiList() {
       input.value = cleaned;
       state.gameEmoji[game] = cleaned;
       saveState();
-      renderGamePills();
       renderHistory();
       renderPerGameStandings();
       if (dom.gameEmojiMessage) dom.gameEmojiMessage.textContent = `${game} icon updated.`;
@@ -762,7 +832,7 @@ function renderScoringInputs() {
       }
       state.scoring[position.position] = roundScore(value);
       saveState();
-      syncPositionHints();
+      renderBoard();
       showToast("Default scoring updated.");
     });
     wrapper.append(label, input);
@@ -779,35 +849,39 @@ function resetForm(options) {
     ? state.sessions.find((item) => item.id === editingSessionId)
     : null;
   const latest = state.sessions.length ? state.sessions[state.sessions.length - 1] : null;
-  const draftGame = draft ? draft.game : "";
-  populateGameSelect(draftGame || (editing ? editing.game : latest ? latest.game : ""));
 
+  populateGameSelect(draft ? draft.game : editing ? editing.game : latest ? latest.game : "");
   if (draft && draft.newGameName) {
     dom.gameSelect.value = "__new";
     dom.newGameInput.hidden = false;
     dom.newGameInput.value = draft.newGameName;
   }
-
   dom.gameDate.value = draft && draft.date ? draft.date : editing ? editing.date : todayString();
   dom.notesInput.value = draft && draft.notes ? draft.notes : editing ? editing.notes || "" : "";
   dom.newGameInput.hidden = !draft || !draft.newGameName;
   if (!draft) dom.newGameInput.value = "";
-  renderResultRows(draft ? draft.results : editing ? editing.results : latest ? latest.results : []);
-  updatePreview();
+
+  // Start from an empty board. Pre-filling with the previous session's exact
+  // result made the form look like a finished entry and all but invited
+  // duplicate logging — "repeat last" is now an explicit button instead.
+  aimedPosition = null;
+  if (!draft) {
+    prefillBoard(editing ? editing.results : []);
+  }
+  renderBoard();
 }
 
-// Captures what the user has typed so a settings change doesn't wipe a
-// half-filled form. Only keeps entries whose player still exists.
+function prefillBoard(results) {
+  formRows = POSITION_META.map((meta) => {
+    const match = results.find((r) => r.position === meta.position);
+    const points = match && Number.isFinite(match.points) ? match.points : state.scoring[meta.position];
+    return { position: meta.position, player: match ? match.player : "", points };
+  });
+}
+
+// Snapshots the board so a settings change never wipes a half-filled session.
 function readFormDraft() {
-  if (!formRows.length) return null;
-  const validNames = state.players.map((player) => player.name);
-  const results = readFormRows()
-    .filter((row) => row.player && validNames.includes(row.player))
-    .map((row) => ({
-      player: row.player,
-      position: row.position,
-      points: Number.isFinite(row.points) && row.points >= 0 ? roundScore(row.points) : state.scoring[row.position],
-    }));
+  const results = readFormRows().filter((row) => row.player);
   if (!results.length) return null;
   const newGameName = dom.gameSelect.value === "__new" ? dom.newGameInput.value.trim() : "";
   return {
@@ -820,7 +894,7 @@ function readFormDraft() {
 }
 
 function populateGameSelect(selectedGame) {
-  const games = [...new Set(state.sessions.map((session) => session.game))].sort((a, b) => a.localeCompare(b));
+  const games = [...new Set(state.sessions.map((s) => s.game))].sort((a, b) => a.localeCompare(b));
   dom.gameSelect.replaceChildren();
   dom.gameSelect.appendChild(createOption("", "— choose a game —"));
   for (const game of games) dom.gameSelect.appendChild(createOption(game, `${getGameEmoji(game)} ${game}`));
@@ -828,92 +902,332 @@ function populateGameSelect(selectedGame) {
     if (!games.includes(game)) dom.gameSelect.appendChild(createOption(game, `${DEFAULT_GAME_EMOJI[game]} ${game}`));
   }
   dom.gameSelect.appendChild(createOption("__new", "➕ Add a new game…"));
-  dom.gameSelect.value = selectedGame && [...dom.gameSelect.options].some((option) => option.value === selectedGame) ? selectedGame : "";
+  dom.gameSelect.value =
+    selectedGame && [...dom.gameSelect.options].some((o) => o.value === selectedGame) ? selectedGame : "";
 }
 
-function renderResultRows(previousResults) {
-  dom.resultsRows.replaceChildren();
-  formRows = [];
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE BOARD — five stones, one per finishing place.
+
+   Two tap targets per row:
+     · the place badge  → aim here, and tap a second row to swap the two
+     · the occupant     → send that player back to the pool
+   A player tapped in the pool lands in the aimed place, or the next open one.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function renderBoard() {
+  dom.stoneList.replaceChildren();
   const players = state.players.slice(0, 5);
 
-  for (const positionMeta of POSITION_META) {
-    const previous = previousResults.find((result) => result.position === positionMeta.position);
-    const fallbackPlayer = players[positionMeta.position - 1];
-    const playerName = previous && players.some((player) => player.name === previous.player)
-      ? previous.player
-      : fallbackPlayer ? fallbackPlayer.name : "";
+  for (const meta of POSITION_META) {
+    const row = formRows.find((r) => r.position === meta.position) || {
+      position: meta.position,
+      player: "",
+      points: state.scoring[meta.position],
+    };
+    const player = row.player ? getPlayer(row.player) : null;
+    const isAimed = aimedPosition === meta.position;
 
-    const row = make("div", "result-row");
-    const position = make("div", "result-position");
-    position.appendChild(make("span", "position-emoji", positionMeta.emoji));
-    const positionCopy = make("span");
-    positionCopy.appendChild(make("strong", "", positionMeta.label));
-    positionCopy.appendChild(make("small", "", `${state.scoring[positionMeta.position]} pts default`));
-    position.appendChild(positionCopy);
+    const li = make(
+      "li",
+      `stone-row${row.player ? " is-filled" : ""}${meta.position === 1 ? " is-first" : ""}${isAimed ? " is-aimed" : ""}`
+    );
+    if (player) li.style.setProperty("--player-color", player.color);
 
-    const playerSelect = make("select", "field result-player");
-    playerSelect.id = `player-${positionMeta.position}`;
-    playerSelect.setAttribute("aria-label", `${positionMeta.label} place player`);
-    playerSelect.appendChild(createOption("", "— choose player —"));
-    for (const player of players) playerSelect.appendChild(createOption(player.name, `${player.emoji} ${player.name}`));
-    playerSelect.value = playerName;
+    // ── The badge: aiming and swapping live here ──
+    const place = make("button", "stone-place");
+    place.type = "button";
+    place.dataset.aimPosition = String(meta.position);
+    place.setAttribute("aria-pressed", isAimed ? "true" : "false");
+    place.setAttribute(
+      "aria-label",
+      isAimed
+        ? `Stop aiming at ${meta.label} place`
+        : `Aim at ${meta.label} place, then tap a player`
+    );
+    place.appendChild(make("span", "stone-place-emoji", meta.emoji));
+    const placeText = make("span", "stone-place-text");
+    placeText.appendChild(make("strong", "", meta.label));
+    // Show the points actually on this row. Printing the default here made the
+    // label quietly lie the moment somebody edited a value.
+    placeText.appendChild(
+      make("small", row.points === state.scoring[meta.position] ? "" : "is-custom", `${trimNumber(row.points)} pts`)
+    );
+    place.appendChild(placeText);
 
-    const pointsInput = make("input", "field points-field");
-    pointsInput.id = `points-${positionMeta.position}`;
-    pointsInput.type = "number";
-    pointsInput.min = "0";
-    pointsInput.step = "0.5";
-    pointsInput.inputMode = "decimal";
-    pointsInput.value = String(previous && Number.isFinite(previous.points) ? previous.points : state.scoring[positionMeta.position]);
-    pointsInput.setAttribute("aria-label", `Points for ${positionMeta.label} place`);
+    // Occupant: a button so returning a player is one tap (and keyboard-reachable)
+    const occupant = make("button", "stone-occupant");
+    occupant.type = "button";
+    if (player) {
+      occupant.dataset.removePosition = String(meta.position);
+      occupant.setAttribute("aria-label", `Send ${player.name} back to the pool from ${meta.label} place`);
+      occupant.appendChild(make("span", "stone-occupant-emoji", player.emoji));
+      occupant.appendChild(make("span", "stone-occupant-name", player.name));
+      occupant.appendChild(make("span", "stone-occupant-remove", "remove"));
+    } else {
+      occupant.disabled = true;
+      occupant.appendChild(
+        make(
+          "span",
+          "stone-occupant-name",
+          isAimed ? "Aimed — tap a player below" : "Empty — aim here, or tap a player below"
+        )
+      );
+    }
+    li.append(place, occupant);
 
-    playerSelect.addEventListener("change", updatePreview);
-    pointsInput.addEventListener("input", updatePreview);
-    row.append(position, playerSelect, pointsInput);
-    dom.resultsRows.appendChild(row);
-    formRows.push({ position: positionMeta.position, select: playerSelect, points: pointsInput });
+    // Points: number field plus steppers, so it works on a phone
+    const points = make("div", "stone-points");
+    const minus = make("button", "step-btn", "−");
+    minus.type = "button";
+    minus.dataset.step = String(meta.position);
+    minus.dataset.delta = "-1";
+    minus.setAttribute("aria-label", `Reduce points for ${meta.label} place`);
+
+    const input = make("input", "points-input");
+    input.type = "number";
+    input.min = "0";
+    input.step = "0.5";
+    input.inputMode = "decimal";
+    input.id = `points-${meta.position}`;
+    input.value = String(row.points);
+    input.setAttribute("aria-label", `Points for ${meta.label} place`);
+    input.addEventListener("input", () => {
+      const target = formRows.find((r) => r.position === meta.position);
+      if (target) target.points = Number(input.value);
+      syncPlaceLabels();
+    });
+
+    const plus = make("button", "step-btn", "+");
+    plus.type = "button";
+    plus.dataset.step = String(meta.position);
+    plus.dataset.delta = "1";
+    plus.setAttribute("aria-label", `Increase points for ${meta.label} place`);
+
+    points.append(minus, input, plus);
+    li.appendChild(points);
+    dom.stoneList.appendChild(li);
+  }
+
+  renderPool(players);
+  updateHint();
+}
+
+function renderPool(players) {
+  dom.playerPool.replaceChildren();
+  const placed = new Set(formRows.map((r) => r.player).filter(Boolean));
+
+  for (const player of players) {
+    const chip = make("button", `pool-chip${placed.has(player.name) ? " is-placed" : ""}`);
+    chip.type = "button";
+    chip.style.setProperty("--player-color", player.color);
+    const position = formRows.find((r) => r.player === player.name);
+
+    if (position) {
+      chip.disabled = true;
+      chip.setAttribute("aria-label", `${player.name} is already in ${POSITION_META[position.position - 1].label} place`);
+      chip.appendChild(make("span", "pool-chip-emoji", player.emoji));
+      chip.appendChild(make("span", "pool-chip-place", POSITION_META[position.position - 1].label));
+    } else {
+      chip.dataset.placePlayer = player.name;
+      chip.setAttribute("aria-label", `Place ${player.name} in the next open place`);
+      chip.appendChild(make("span", "pool-chip-emoji", player.emoji));
+      chip.appendChild(make("span", "pool-chip-name", player.name));
+    }
+    dom.playerPool.appendChild(chip);
   }
 }
 
-function syncPositionHints() {
-  const hints = dom.resultsRows.querySelectorAll(".result-position small");
-  hints.forEach((hint, index) => {
-    const position = index + 1;
-    hint.textContent = `${state.scoring[position]} pts default`;
-  });
-}
+function updateHint() {
+  if (!dom.podiumHint) return;
+  const placed = formRows.filter((r) => r.player).length;
 
-function updatePreview() {
-  if (!dom.previewList) return;
-  const rows = readFormRows();
-  const selected = rows.filter((row) => row.player);
-  dom.previewList.replaceChildren();
-
-  if (!selected.length) {
-    dom.previewTitle.textContent = "Pick a player for 1st";
-    dom.previewList.appendChild(make("p", "preview-empty", "Choose the finishing order on the left and this preview will update instantly."));
+  if (aimedPosition) {
+    const label = POSITION_META[aimedPosition - 1].label;
+    const holder = formRows.find((r) => r.position === aimedPosition);
+    dom.podiumHint.textContent = holder && holder.player
+      ? `Aiming at ${label} place — tap a player to take ${holder.player}'s spot, or tap another place to swap.`
+      : `Aiming at ${label} place — tap a player below to fill it.`;
     return;
   }
 
-  const leader = rows.find((row) => row.position === 1 && row.player) || selected[0];
-  dom.previewTitle.textContent = `${leader.player} takes the lead`;
-  for (const row of selected) {
-    const chip = make("div", `preview-chip${row === leader ? " winner" : ""}`);
-    chip.style.setProperty("--player-color", getPlayer(row.player).color);
-    const name = make("span", "chip-name");
-    name.textContent = `${POSITION_META[row.position - 1].emoji} ${row.player}`;
-    chip.appendChild(name);
-    chip.appendChild(make("span", "chip-points", `${row.points} pts`));
-    dom.previewList.appendChild(chip);
+  if (!placed) {
+    dom.podiumHint.textContent =
+      "Tap “everyone played” for the usual case, or tap players one by one. Tap a place first if someone finished out of order.";
+  } else if (placed < 5) {
+    dom.podiumHint.textContent = `${placed} of 5 placed — the next player you tap takes the next open place.`;
+  } else {
+    dom.podiumHint.textContent = "All five placed. Tap two places to swap them, adjust the points, then log the session.";
   }
 }
 
+function handlePoolClick(event) {
+  const chip = event.target.closest("[data-place-player]");
+  if (!chip) return;
+  placePlayer(chip.dataset.placePlayer);
+}
+
+function handleStoneClick(event) {
+  const step = event.target.closest("[data-step]");
+  if (step) {
+    const position = Number(step.dataset.step);
+    const delta = Number(step.dataset.delta);
+    const target = formRows.find((r) => r.position === position);
+    if (!target) return;
+    const current = Number.isFinite(target.points) ? target.points : 0;
+    target.points = Math.max(0, roundScore(current + delta));
+    const input = document.querySelector(`#points-${position}`);
+    if (input) input.value = String(target.points);
+    syncPlaceLabels();
+    updateHint();
+    return;
+  }
+
+  const remove = event.target.closest("[data-remove-position]");
+  if (remove) {
+    removePlayer(Number(remove.dataset.removePosition));
+    return;
+  }
+
+  const aim = event.target.closest("[data-aim-position]");
+  if (!aim) return;
+  const position = Number(aim.dataset.aimPosition);
+  // Aiming at one place and then tapping another swaps those two.
+  if (aimedPosition !== null && aimedPosition !== position) {
+    swapPositions(aimedPosition, position);
+    return;
+  }
+  aimAt(aimedPosition === position ? null : position);
+}
+
+function aimAt(position) {
+  aimedPosition = position;
+  renderBoard();
+  if (position) {
+    const badge = dom.stoneList.querySelector(`[data-aim-position="${position}"]`);
+    if (badge) badge.focus();
+  }
+}
+
+// Points belong to the place, not the person, so a swap moves players only.
+function swapPositions(a, b) {
+  const rowA = formRows.find((r) => r.position === a);
+  const rowB = formRows.find((r) => r.position === b);
+  if (!rowA || !rowB || a === b) return;
+  const held = rowA.player;
+  rowA.player = rowB.player;
+  rowB.player = held;
+  aimedPosition = null;
+  renderBoard();
+  showToast(`Swapped ${POSITION_META[a - 1].label} and ${POSITION_META[b - 1].label} places.`);
+}
+
+function placePlayer(name) {
+  const target = aimedPosition
+    ? formRows.find((r) => r.position === aimedPosition)
+    : formRows.find((r) => !r.player);
+
+  if (!target) {
+    showToast("All five places are taken. Tap a place to aim, or send someone back to the pool.");
+    return;
+  }
+
+  // Whoever was in the aimed place is the one who actually gets evicted.
+  const displaced = target.player && target.player !== name ? target.player : null;
+  // Clear the player off any other stone first, so nobody can hold two places.
+  for (const row of formRows) {
+    if (row.player === name && row.position !== target.position) row.player = "";
+  }
+
+  target.player = name;
+  target.points = state.scoring[target.position];
+  aimedPosition = null;
+  renderBoard();
+
+  if (displaced) showToast(`${displaced} went back to the pool.`);
+  const chip = dom.playerPool.querySelector("[data-place-player]");
+  if (chip) chip.focus();
+}
+
+function removePlayer(position) {
+  const target = formRows.find((r) => r.position === position);
+  if (!target || !target.player) return;
+  const name = target.player;
+  target.player = "";
+  target.points = state.scoring[position];
+  if (aimedPosition === position) aimedPosition = null;
+  renderBoard();
+  const chip = dom.playerPool.querySelector(`[data-place-player="${cssEscape(name)}"]`);
+  if (chip) chip.focus();
+}
+
+/* ── Board shortcuts: the three things you actually want to do ── */
+
+function fillEveryonePlayed() {
+  const open = formRows.filter((r) => !r.player);
+  const waiting = state.players.slice(0, 5).filter((p) => !formRows.some((r) => r.player === p.name));
+
+  if (!open.length || !waiting.length) {
+    showToast("Everyone is already on a stone.");
+    return;
+  }
+
+  const count = Math.min(open.length, waiting.length);
+  for (let i = 0; i < count; i += 1) {
+    open[i].player = waiting[i].name;
+    open[i].points = state.scoring[open[i].position];
+  }
+  aimedPosition = null;
+  renderBoard();
+  showToast(`${count} placed in household order — tap two places to swap anyone who finished differently.`);
+}
+
+function clearBoard() {
+  const placed = formRows.filter((r) => r.player).length;
+  if (!placed) {
+    showToast("The board is already empty.");
+    return;
+  }
+  prefillBoard([]);
+  aimedPosition = null;
+  renderBoard();
+  showToast(`Sent all ${placed} back to the pool.`);
+}
+
+function repeatLastGame() {
+  const last = state.sessions.length ? state.sessions[state.sessions.length - 1] : null;
+  if (!last) {
+    showToast("No earlier session to copy yet.");
+    return;
+  }
+  prefillBoard(last.results);
+  dom.gameSelect.value = last.game;
+  dom.gameDate.value = todayString();
+  aimedPosition = null;
+  renderBoard();
+  showToast(`Copied the order from ${last.game}. Change the date if that was a different day.`);
+}
+
+// Keeps each badge's points label honest when points change without a re-render.
+function syncPlaceLabels() {
+  if (!dom.stoneList) return;
+  for (const meta of POSITION_META) {
+    const row = formRows.find((r) => r.position === meta.position);
+    if (!row) continue;
+    const label = dom.stoneList.querySelector(`[data-aim-position="${meta.position}"] .stone-place-text small`);
+    if (!label) continue;
+    label.textContent = `${trimNumber(row.points)} pts`;
+    label.classList.toggle("is-custom", row.points !== state.scoring[meta.position]);
+  }
+}
+
+function cssEscape(value) {
+  if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
 function readFormRows() {
-  return formRows.map((row) => ({
-    position: row.position,
-    player: row.select.value,
-    points: Number(row.points.value),
-  }));
+  return formRows.map((row) => ({ position: row.position, player: row.player, points: row.points }));
 }
 
 function handleGameSelectChange() {
@@ -922,9 +1236,9 @@ function handleGameSelectChange() {
   if (addingNew) dom.newGameInput.focus();
 }
 
-function resetPointFields() {
-  for (const row of formRows) row.points.value = String(state.scoring[row.position]);
-  updatePreview();
+function resetAllPoints() {
+  for (const row of formRows) row.points = state.scoring[row.position];
+  renderBoard();
   showToast("Points reset to the current defaults.");
 }
 
@@ -934,7 +1248,7 @@ function handleGameSubmit(event) {
 
   const game = getSubmittedGameName();
   const date = dom.gameDate.value;
-  const rows = readFormRows();
+  const rows = readFormRows().filter((row) => row.player);
 
   if (!game) {
     setFormMessage("Choose a game or enter a new game name.", "error");
@@ -944,12 +1258,12 @@ function handleGameSubmit(event) {
     setFormMessage("Choose a valid date for the session.", "error");
     return;
   }
+  if (!rows.length) {
+    setFormMessage("Place at least one player on a stone before logging.", "error");
+    return;
+  }
 
   for (const row of rows) {
-    if (!row.player) {
-      setFormMessage(`Choose a player for ${POSITION_META[row.position - 1].label} place.`, "error");
-      return;
-    }
     if (!Number.isFinite(row.points) || row.points < 0) {
       setFormMessage(`Points for ${POSITION_META[row.position - 1].label} must be zero or more.`, "error");
       return;
@@ -968,9 +1282,14 @@ function handleGameSubmit(event) {
       session.game.toLowerCase() === game.toLowerCase()
   );
   if (duplicate) {
-    setFormMessage(`${game} on ${formatDate(date)} is already logged.`, "error");
+    setFormMessage(
+      `${game} on ${formatDate(date)} is already logged — use Edit on that entry in the Chronicle to change it.`,
+      "error"
+    );
     return;
   }
+
+  snapshotForUndo();
 
   const session = {
     id: editingSessionId || makeId(),
@@ -996,7 +1315,7 @@ function handleGameSubmit(event) {
   const wasEditing = Boolean(editingSessionId);
   editingSessionId = null;
   dom.editBanner.hidden = true;
-  dom.logButton.textContent = "Log game";
+  dom.logButton.textContent = "Log Session";
 
   saveState();
   renderDashboard();
@@ -1006,7 +1325,7 @@ function handleGameSubmit(event) {
     wasEditing ? `${game} updated successfully.` : `${game} logged successfully.`,
     "success"
   );
-  showToast(wasEditing ? `${game} updated.` : `${game} added to the tracker.`);
+  showToast(wasEditing ? `${game} updated.` : `${game} added to the tracker.`, { undo: true });
 }
 
 function getSubmittedGameName() {
@@ -1029,11 +1348,12 @@ function handleHistoryClick(event) {
   const confirmed = window.confirm(`Remove the ${session.game} session from ${formatDate(session.date)}?`);
   if (!confirmed) return;
   if (editingSessionId === session.id) cancelEdit();
+  snapshotForUndo();
   state.sessions = state.sessions.filter((item) => item.id !== session.id);
   saveState();
   renderDashboard();
   resetForm();
-  showToast("Session removed.");
+  showToast("Session removed.", { undo: true });
 }
 
 function startEditing(sessionId) {
@@ -1043,15 +1363,15 @@ function startEditing(sessionId) {
   editingSessionId = sessionId;
   dom.editBanner.hidden = false;
   dom.editBannerText.textContent = `Editing ${session.game} from ${formatDate(session.date)}`;
-  dom.logButton.textContent = "Save changes";
+  dom.logButton.textContent = "Save Changes";
 
   populateGameSelect(session.game);
   dom.gameDate.value = session.date;
   dom.notesInput.value = session.notes || "";
   dom.newGameInput.hidden = true;
   dom.newGameInput.value = "";
-  renderResultRows(session.results);
-  updatePreview();
+  prefillBoard(session.results);
+  renderBoard();
   clearFormMessage();
 
   dom.logSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1063,14 +1383,14 @@ function cancelEdit() {
   editingSessionId = null;
   dom.editBanner.hidden = true;
   dom.editBannerText.textContent = "Editing a saved session";
-  dom.logButton.textContent = "Log game";
+  dom.logButton.textContent = "Log Session";
   clearFormMessage();
   resetForm();
 }
 
 function renderDataSettingsMessage(message, type = "success") {
   dom.settingsMessage.textContent = message;
-  dom.settingsMessage.style.color = type === "error" ? "var(--danger)" : "var(--mint)";
+  dom.settingsMessage.style.color = type === "error" ? "var(--danger)" : "var(--success)";
 }
 
 function exportData() {
@@ -1110,7 +1430,7 @@ function handleImportFile(event) {
       state = nextState;
       editingSessionId = null;
       dom.editBanner.hidden = true;
-      dom.logButton.textContent = "Log game";
+      dom.logButton.textContent = "Log Session";
       saveState();
       renderDashboard();
       renderScoringInputs();
@@ -1130,7 +1450,7 @@ function clearAllData() {
   state = createEmptyState();
   editingSessionId = null;
   dom.editBanner.hidden = true;
-  dom.logButton.textContent = "Log game";
+  dom.logButton.textContent = "Log Session";
   saveState();
   renderDashboard();
   renderScoringInputs();
@@ -1145,7 +1465,7 @@ function resetScoring() {
   state.scoring = clone(DEFAULT_SCORING);
   saveState();
   renderScoringInputs();
-  syncPositionHints();
+  renderBoard();
   renderDataSettingsMessage("Default scoring restored.");
   showToast("Default scoring restored.");
 }
@@ -1192,9 +1512,37 @@ function formatDate(value) {
   return `${day} ${date.toLocaleString("en", { month: "short" })} ${year}`;
 }
 
-function showToast(message) {
+function showToast(message, options) {
+  const undoable = Boolean(options && options.undo);
   window.clearTimeout(toastTimer);
-  dom.toast.textContent = message;
+  // Write to the inner span — assigning textContent on the toast itself would
+  // delete the Undo button along with the text.
+  if (dom.toastText) dom.toastText.textContent = message;
+  else dom.toast.textContent = message;
+  if (dom.undoButton) dom.undoButton.hidden = !undoable;
+  dom.toast.classList.toggle("has-undo", undoable);
   dom.toast.classList.add("visible");
-  toastTimer = window.setTimeout(() => dom.toast.classList.remove("visible"), 2800);
+  toastTimer = window.setTimeout(() => dom.toast.classList.remove("visible"), undoable ? 6500 : 2800);
+}
+
+/* ═══════════════════════════════ UNDO ═══════════════════════════════ */
+
+function snapshotForUndo() {
+  undoSnapshot = JSON.stringify({ sessions: state.sessions, players: state.players });
+}
+
+function performUndo() {
+  if (!undoSnapshot) return;
+  const restored = JSON.parse(undoSnapshot);
+  undoSnapshot = null;
+  state.sessions = restored.sessions;
+  state.players = restored.players;
+  cancelEdit();
+  saveState();
+  renderScoringInputs();
+  renderRoster();
+  renderGameEmojiList();
+  renderDashboard();
+  resetForm();
+  showToast("Undone — the ledger is back as it was.");
 }

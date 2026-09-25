@@ -3,175 +3,194 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#10121d" />
+    <meta name="theme-color" content="#0b0a09" />
     <meta
       name="description"
-      content="A friendly, local-first board game scoreboard for tracking games, points, and bragging rights."
+      content="The Tower — a board game scoreboard for a household of five. Log sessions, settle places, and keep the eternal scoreboard."
     />
-    <title>Board Game Tracker</title>
+    <title>The Tower · Board Game Scoreboard</title>
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%236d4aff'/><circle cx='21' cy='21' r='6' fill='%23ffffff'/><circle cx='43' cy='21' r='6' fill='%23ffffff'/><circle cx='32' cy='32' r='6' fill='%23ffffff'/><circle cx='21' cy='43' r='6' fill='%23ffffff'/><circle cx='43' cy='43' r='6' fill='%23ffffff'/></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230b0a09'/><path d='M18 54V22h4v-4h4v4h4v-4h4v4h4v-4h4v4h4v32z' fill='%23c9a227'/><rect x='28' y='38' width='8' height='16' rx='4' fill='%230b0a09'/></svg>"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+      rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
     <div class="page-shell">
+      <!-- ══════════════════════════ CREST ══════════════════════════ -->
       <header class="topbar">
-        <a class="brand" href="./" aria-label="Board Game Tracker home">
-          <span class="brand-mark" aria-hidden="true">🎲</span>
+        <a class="brand" href="#ledgerSection" aria-label="The Tower, back to the top of the ledger">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 64 64" class="tower-glyph">
+              <path d="M12 56V20h5v-5h5v5h5v-5h5v5h5v-5h5v5h5v36z" fill="currentColor" />
+              <path d="M28 56V40a4 4 0 0 1 8 0v16z" fill="#0b0a09" />
+              <rect x="20" y="26" width="4" height="8" fill="#0b0a09" />
+              <rect x="40" y="26" width="4" height="8" fill="#0b0a09" />
+            </svg>
+          </span>
           <span class="brand-copy">
-            <strong>Board Game Tracker</strong>
-            <small>The battle for flat supremacy</small>
+            <strong>The Tower</strong>
+            <small>Board game scoreboard · five souls, one crown</small>
           </span>
         </a>
+
+        <nav class="crest-nav" aria-label="Jump to a part of the page">
+          <a href="#ledgerSection">Ledger</a>
+          <a href="#logSection">Log a game</a>
+          <a href="#chronicleSection">Chronicle</a>
+          <a href="#vaultSection">The Vault</a>
+        </nav>
+
         <div class="top-actions" aria-label="Data actions">
-          <button class="button button-quiet" id="exportButton" type="button">Export data</button>
-          <button class="button button-quiet" id="importButton" type="button">Import data</button>
+          <button class="button button-quiet" id="exportButton" type="button">Export</button>
+          <button class="button button-quiet" id="importButton" type="button">Import</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
         </div>
       </header>
 
       <main>
-        <section class="hero" aria-labelledby="pageTitle">
-          <div class="hero-copy">
-            <p class="eyebrow">Friendly competition · five-player rotation</p>
-            <h1 id="pageTitle">Board Game Tracker</h1>
-            <p class="hero-description">
-              Log a game, settle the finishing order, and let the scoreboard do the arguing.
-              Everything is saved in this browser automatically.
-            </p>
-            <div class="game-pills" id="gamePills" aria-label="Games played"></div>
+        <!-- ══════════════════ THE LEDGER — the scoreboard, first thing you see ══════════════════ -->
+        <section class="section section-first" id="ledgerSection" aria-labelledby="leaderboardTitle">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">The Ledger</p>
+              <h1 id="leaderboardTitle">Who Holds the Crown</h1>
+            </div>
+            <p class="section-description" id="leaderboardSummary"></p>
           </div>
-          <div class="hero-art" aria-hidden="true">
-            <div class="art-glow"></div>
-            <div class="art-die">🎲</div>
-            <div class="art-card art-card-one">🏆</div>
-            <div class="art-card art-card-two">✨</div>
-            <div class="art-card art-card-three">🎯</div>
+
+          <div class="stat-row" id="ledgerStats" aria-label="Ledger at a glance"></div>
+
+          <h2 class="sr-only">Top three</h2>
+          <div class="triumvirate" id="podium" aria-label="Top three players"></div>
+
+          <div class="roll-block" id="rollBlock">
+            <h3 class="roll-heading" id="rollHeading">The Rest of the Household</h3>
+            <div class="roll" id="leaderboardRows"></div>
           </div>
         </section>
 
-        <section class="stats-grid" id="statsGrid" aria-label="Tracker summary"></section>
-
+        <!-- ══════════════════ LOG A SESSION ══════════════════ -->
         <section class="section" id="logSection" aria-labelledby="logTitle">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">Capture the result</p>
-              <h2 id="logTitle">Log a game</h2>
+              <p class="section-kicker">Raise a New Record</p>
+              <h2 id="logTitle">Log a Session</h2>
             </div>
-            <p class="section-description">Choose a game, set the finishing order, and adjust points if the game uses a custom score.</p>
+            <p class="section-description">
+              Set the game and date, then carve the finishing order into the stones.
+            </p>
+          </div>
+
+          <div class="edit-banner" id="editBanner" role="status" aria-live="polite" hidden>
+            <span class="edit-banner-text" id="editBannerText">Editing a saved session</span>
+            <button class="button button-quiet button-small" id="cancelEditButton" type="button">Cancel edit</button>
           </div>
 
           <form class="card game-form" id="gameForm" novalidate>
-            <div class="edit-banner" id="editBanner" role="status" aria-live="polite" hidden>
-              <span class="edit-banner-text" id="editBannerText">Editing a saved session</span>
-              <button class="button button-quiet button-small" id="cancelEditButton" type="button">Cancel edit</button>
-            </div>
-            <div class="form-layout">
-              <div class="form-main">
-                <div class="form-row form-row-game">
-                  <label for="gameSelect">Game</label>
-                  <div class="field-stack">
-                    <select class="field" id="gameSelect" name="game" required></select>
-                    <input class="field" id="newGameInput" name="newGame" type="text" placeholder="e.g. Catan" hidden />
-                  </div>
-                  <span class="field-hint">New games need no setup.</span>
+            <div class="form-setup">
+              <div class="setup-field setup-game">
+                <label for="gameSelect">Game</label>
+                <div class="field-stack">
+                  <select class="field" id="gameSelect" name="game" required></select>
+                  <input class="field" id="newGameInput" name="newGame" type="text" placeholder="e.g. Catan" hidden />
                 </div>
-
-                <div class="form-row form-row-date">
-                  <label for="gameDate">Date</label>
-                  <input class="field" id="gameDate" name="date" type="date" required />
-                  <span class="field-hint">Defaults to today.</span>
-                </div>
-
-                <div class="results-heading">
-                  <div>
-                    <p class="mini-label">Finishing order</p>
-                    <h3>Who came where?</h3>
-                  </div>
-                  <p>Each player gets one position.</p>
-                </div>
-                <div class="results-list" id="resultsRows"></div>
-
-                <label class="notes-label" for="notesInput">Notes <span>(optional)</span></label>
-                <textarea
-                  class="field notes-field"
-                  id="notesInput"
-                  name="notes"
-                  rows="3"
-                  placeholder="The comeback, the funniest betrayal, the card that changed everything…"
-                ></textarea>
               </div>
-
-              <aside class="preview-card" aria-live="polite">
-                <div class="preview-heading">
-                  <span class="preview-icon" aria-hidden="true">🏆</span>
-                  <div>
-                    <p class="mini-label">Live preview</p>
-                    <h3 id="previewTitle">Pick a player for 1st</h3>
-                  </div>
-                </div>
-                <div class="preview-list" id="previewList"></div>
-                <p class="preview-tip">Tip: points default to 5 / 3 / 2 / 0 / 0, but you can change every row.</p>
-              </aside>
+              <div class="setup-field setup-date">
+                <label for="gameDate">Date</label>
+                <input class="field" id="gameDate" name="date" type="date" required />
+              </div>
             </div>
+
+            <div class="board-head">
+              <p class="podium-hint" id="podiumHint" role="status" aria-live="polite"></p>
+              <div class="board-tools" role="group" aria-label="Board shortcuts">
+                <button class="chip-button" id="everyonePlayedButton" type="button">Everyone played</button>
+                <button class="chip-button" id="repeatLastButton" type="button">Repeat last</button>
+                <button class="chip-button" id="clearBoardButton" type="button">Clear</button>
+              </div>
+            </div>
+
+            <ol class="stone-list" id="stoneList" aria-label="Finishing order"></ol>
+
+            <div class="roster-pool">
+              <p class="pool-label">The Household — tap to place</p>
+              <div class="pool-row" id="playerPool" role="group" aria-label="Players waiting to be placed"></div>
+              <p class="pool-footnote">
+                Tip: tap a place on the left to aim there, then tap a player — or aim at one place and
+                tap another to swap them. Keys <kbd>1</kbd>–<kbd>5</kbd> aim, <kbd>Esc</kbd> stands down.
+              </p>
+            </div>
+
+            <label class="notes-label" for="notesInput">
+              Chronicle <span>(optional)</span>
+            </label>
+            <textarea
+              class="field notes-field"
+              id="notesInput"
+              name="notes"
+              rows="2"
+              placeholder="The comeback, the betrayal, the card that changed everything…"
+            ></textarea>
 
             <div class="form-actions">
               <div class="form-buttons">
-                <button class="button button-primary" id="logButton" type="submit">Log game</button>
-                <button class="button button-secondary" id="resetPointsButton" type="button">Reset points</button>
+                <button class="button button-primary" id="logButton" type="submit">Log Session</button>
+                <button class="button button-secondary" id="resetPointsButton" type="button">Reset Points</button>
               </div>
               <p class="form-message" id="formMessage" role="status" aria-live="polite"></p>
             </div>
           </form>
         </section>
 
-        <section class="section" id="leaderboardSection" aria-labelledby="leaderboardTitle">
+        <!-- ══════════════════ THE CHRONICLE ══════════════════ -->
+        <section class="section" id="chronicleSection" aria-labelledby="historyTitle">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">The serious business</p>
-              <h2 id="leaderboardTitle">Leaderboard</h2>
+              <p class="section-kicker">Written in Stone</p>
+              <h2 id="historyTitle">The Chronicle</h2>
             </div>
-            <p class="section-description" id="leaderboardSummary">Points, wins, and the all-important bragging rights.</p>
-          </div>
-          <div class="leaderboard-layout">
-            <div class="podium" id="podium" aria-label="Top three players"></div>
-            <div class="leaderboard-list" id="leaderboardRows"></div>
-          </div>
-        </section>
-
-        <section class="section" id="gamesSection" aria-labelledby="gamesTitle">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Know your specialists</p>
-              <h2 id="gamesTitle">Per-game standings</h2>
-            </div>
-            <p class="section-description">See who dominates each game on the table.</p>
-          </div>
-          <div class="games-grid" id="gamesGrid"></div>
-        </section>
-
-        <section class="section" id="historySection" aria-labelledby="historyTitle">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">For the record</p>
-              <h2 id="historyTitle">History</h2>
-            </div>
-            <p class="section-description">Every session, newest first.</p>
+            <p class="section-description">Every session, newest first. Edit or remove any of them.</p>
           </div>
           <div class="history-list" id="historyList"></div>
         </section>
 
-        <section class="section settings-section" aria-labelledby="settingsTitle">
+        <!-- ══════════════════ STANDINGS BY GAME ══════════════════ -->
+        <section class="section" id="gamesSection" aria-labelledby="gamesTitle">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Specialisms</p>
+              <h2 id="gamesTitle">Standings by Game</h2>
+            </div>
+            <p class="section-description">Who truly dominates each table.</p>
+          </div>
+          <div class="games-grid" id="gamesGrid"></div>
+        </section>
+
+        <!-- ══════════════════ THE VAULT ══════════════════ -->
+        <section class="section settings-section" id="vaultSection" aria-labelledby="settingsTitle">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">The Vault</p>
+              <h2 id="settingsTitle">Settings</h2>
+            </div>
+            <p class="section-description">Players, icons, scoring, and your backup.</p>
+          </div>
+
           <details class="card details-card">
             <summary>
               <span>
                 <span class="summary-icon" aria-hidden="true">⚙️</span>
                 <span>
-                  <span class="summary-title">Data &amp; settings</span>
-                  <span class="summary-subtitle">Export a backup or change the default scoring.</span>
+                  <span class="summary-title">Household &amp; Scoring</span>
+                  <span class="summary-subtitle">Players, game icons, and points per place.</span>
                 </span>
               </span>
               <span class="summary-chevron" aria-hidden="true">⌄</span>
@@ -181,42 +200,49 @@
                 <p class="mini-label">Your group</p>
                 <h3>Players</h3>
                 <p class="muted-copy">
-                  Five names, each with their own emoji and colour. Changes save as you type and apply
-                  everywhere — leaderboard, podium, and history.
+                  Five names, each with an icon and a colour. Renaming a player updates their whole
+                  history, so nobody loses their points.
                 </p>
                 <div class="roster-list" id="rosterList"></div>
                 <p class="settings-message" id="rosterMessage" role="status" aria-live="polite"></p>
               </div>
+
               <div class="settings-block settings-block-wide">
                 <p class="mini-label">Your games</p>
-                <h3>Game icons</h3>
-                <p class="muted-copy">
-                  Give each game an icon so it reads instantly in the pills, history, and per-game standings.
-                </p>
+                <h3>Game Icons</h3>
+                <p class="muted-copy">Give each game an icon so it reads instantly everywhere.</p>
                 <div class="game-emoji-list" id="gameEmojiList"></div>
                 <p class="settings-message" id="gameEmojiMessage" role="status" aria-live="polite"></p>
               </div>
-              <div class="settings-block">
-                <p class="mini-label">Your data</p>
-                <h3>Keep a backup</h3>
-                <p class="muted-copy">
-                  This site is a static GitHub Pages app. Your games are stored locally in this browser, not in a shared cloud database. Export before switching devices or clearing browser data.
-                </p>
-                <div class="settings-buttons">
-                  <button class="button button-secondary" id="dataExportButton" type="button">Download JSON backup</button>
-                  <button class="button button-secondary" id="dataImportButton" type="button">Import JSON backup</button>
-                  <button class="button button-danger" id="clearDataButton" type="button">Clear all games</button>
-                </div>
-                <p class="settings-message" id="settingsMessage" role="status" aria-live="polite"></p>
-              </div>
+
               <div class="settings-block">
                 <p class="mini-label">Default scoring</p>
-                <h3>Points by position</h3>
-                <p class="muted-copy">These values pre-fill new sessions. Existing results keep the points they were logged with.</p>
+                <h3>Points by Place</h3>
+                <p class="muted-copy">
+                  These values pre-fill new sessions. Existing results keep the points they were
+                  logged with.
+                </p>
                 <div class="scoring-grid" id="scoringInputs"></div>
                 <div class="settings-buttons">
-                  <button class="button button-secondary" id="resetScoringButton" type="button">Restore 5 / 3 / 2 / 0 / 0</button>
+                  <button class="button button-secondary" id="resetScoringButton" type="button">
+                    Restore 5 / 3 / 2 / 0 / 0
+                  </button>
                 </div>
+              </div>
+
+              <div class="settings-block">
+                <p class="mini-label">Your data</p>
+                <h3>Keep a Backup</h3>
+                <p class="muted-copy">
+                  Games are stored in this browser only — there is no server and no account. Export
+                  before switching devices or clearing browser data.
+                </p>
+                <div class="settings-buttons">
+                  <button class="button button-secondary" id="dataExportButton" type="button">Download JSON</button>
+                  <button class="button button-secondary" id="dataImportButton" type="button">Import JSON</button>
+                  <button class="button button-danger" id="clearDataButton" type="button">Clear All Games</button>
+                </div>
+                <p class="settings-message" id="settingsMessage" role="status" aria-live="polite"></p>
               </div>
             </div>
           </details>
@@ -224,14 +250,18 @@
       </main>
 
       <footer class="footer">
-        <span>Made for friendly rivals and very serious scorekeeping.</span>
+        <span>The Tower · kept by hand, scored in stone</span>
         <span id="storageStatus">Saved locally in this browser</span>
       </footer>
     </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="toast-text" id="toastText"></span>
+      <button class="toast-undo" id="undoButton" type="button" hidden>Undo</button>
+    </div>
+
     <noscript>
-      <div class="noscript">This tracker needs JavaScript enabled to calculate the leaderboard.</div>
+      <div class="noscript">This scoreboard needs JavaScript enabled to keep the ledger.</div>
     </noscript>
   </body>
 </html>
