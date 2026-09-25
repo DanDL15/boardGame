@@ -95,33 +95,20 @@ Out of the box everything is stored in your browser's `localStorage`:
 **Use _Export_ before switching devices or clearing your browser.** Use _Import_ to restore a
 backup.
 
-## ☁️ One shared live board (2-minute setup)
+## ☁️ One shared live board (30 seconds)
 
-Browsers can't talk to each other, so instant phone ↔ laptop sync needs one shared home for
-the scores. That home is this repo itself — `data/board.json` — read and written through the
-GitHub API. No new accounts, no new services, no server code:
+Every log appears on every device within a second or two, with no accounts and nothing to
+configure:
 
-1. Create a **fine-grained personal access token**:
-   - GitHub → your avatar → **Settings → Developer settings → Personal access tokens →
-     Fine-grained tokens → Generate new token**.
-   - Name it `tower-board`, expiry whatever you like, **Repository access → Only select
-     repositories → `DanDL15/boardGame`**.
-   - Under **Permissions → Repository permissions**, set **Contents → Read and write**.
-     Nothing else. Generate and copy it (it starts `github_pat_…`).
-2. On your laptop, open the Tower → **Vault → Shared Board**, paste the token, check the repo
-   reads `DanDL15/boardGame`, tap **Connect**, then **Push this device ↑** once. This creates
-   `data/board.json` from the history you already have.
-3. On your phone (and every other device), open the Tower → **Vault → Shared Board**, paste
-   the **same token**, tap **Connect**. The shared board pulls in within seconds.
+1. On one device, open the Tower → **Vault → Shared Board** → tap **New code**. Six words
+   appear — that code *is* the password.
+2. On every other device, open the same screen, type the six words, tap **Pair this device**.
 
-After that every log, edit, or remove pushes within ~2 seconds and every device pulls every
-15 seconds — and pushes merge by session, so two flatmates logging at once don't wipe each
-other out. The token stays on each device and is never included in exports. Tokens are
-revocable any time under Developer settings.
-
-> The repo is public, so `data/board.json` is readable by anyone with the link — it's game
-> scores, but go in with eyes open. If that bothers you, make the repo private (Pages still
-> works) and the file is only writable with the token.
+That's it. The board rides an encrypted live channel: the channel name and the AES-GCM key
+are both derived from the six words, so anyone holding them can read the scores and nobody
+else can. Newly paired phones get the whole history instantly (the latest board is pinned
+to the channel), simultaneous loggers merge by session instead of overwriting, and if the
+channel ever drops the app keeps working locally and catches up on reconnect.
 
 ## 🚀 Run it locally
 
@@ -186,7 +173,7 @@ Colours, spacing, and the whole torch-lit palette live in the `:root` block at t
 | --- | --- |
 | `index.html` | The single page — five tabs |
 | `styles.css` | The Tower theme, design tokens, responsive layout |
-| `app.js` | State, rendering, validation, teams, stats, GitHub sync, import/export |
+| `app.js` | State, rendering, validation, teams, stats, live pair-code sync, import/export |
 | `assets/tower-bg.jpg` | The tower painting, compressed for phones |
 | `404.html` | Redirects stray URLs to the dashboard |
 | `dev/dom-stub.js` | Minimal DOM used by the self-test |

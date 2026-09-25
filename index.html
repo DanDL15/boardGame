@@ -269,25 +269,28 @@
                 <p class="mini-label">Live sync</p>
                 <h3>Share Across Devices</h3>
                 <p class="muted-copy">
-                  This page alone cannot sync — browsers can't talk to each other. The scores live
-                  in your own repo (<code>data/board.json</code>), and each device reads and writes
-                  it with a GitHub token you paste once per device. No new accounts, no new
-                  services. The token stays on your device, never in the backup file.
+                  One device taps <strong>New code</strong> and shows six words. Every other device
+                  types those words once. From then on every game appears everywhere within a
+                  second or two — no accounts, nothing to configure. The words are the password:
+                  anyone holding them can read the scores, nobody else can.
+                </p>
+                <p class="pair-code-line" id="pairCodeLine" hidden>
+                  This flat's code: <strong id="pairCodeValue"></strong>
                 </p>
                 <div class="sync-grid">
                   <div class="setup-field">
-                    <label for="ghToken">GitHub token (fine-grained, this repo only)</label>
-                    <input class="field" id="ghToken" type="password" placeholder="github_pat_…" autocomplete="off" />
+                    <label for="pairCodeInput">Flat code (six words)</label>
+                    <input class="field" id="pairCodeInput" type="text" placeholder="e.g. hazel tower lantern …" autocomplete="off" autocapitalize="off" spellcheck="false" />
                   </div>
                   <div class="setup-field">
-                    <label for="ghRepo">Repo</label>
-                    <input class="field" id="ghRepo" type="text" value="DanDL15/boardGame" autocomplete="off" />
+                    <label aria-hidden="true">&nbsp;</label>
+                    <button class="button button-secondary" id="pairGenerateButton" type="button">New code</button>
                   </div>
                 </div>
                 <div class="settings-buttons">
-                  <button class="button button-primary" id="syncConnectButton" type="button">Connect</button>
-                  <button class="button button-secondary" id="syncDisconnectButton" type="button">Disconnect</button>
-                  <button class="button button-secondary" id="syncPushButton" type="button">Push this device ↑</button>
+                  <button class="button button-primary" id="syncConnectButton" type="button">Pair this device</button>
+                  <button class="button button-secondary" id="syncDisconnectButton" type="button">Unpair</button>
+                  <button class="button button-secondary" id="syncPushButton" type="button">Send now ↑</button>
                 </div>
                 <p class="settings-message" id="syncMessage" role="status" aria-live="polite"></p>
               </div>

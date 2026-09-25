@@ -99,7 +99,7 @@ function init() {
   renderDashboard();
   resetForm();
   updateStorageStatus();
-  initSync();
+  initPair();
 }
 
 function cacheDom() {
@@ -162,8 +162,10 @@ function cacheDom() {
   dom.streakRows = document.querySelector("#streakRows");
   dom.h2hTable = document.querySelector("#h2hTable");
   dom.formChart = document.querySelector("#formRows");
-  dom.ghToken = document.querySelector("#ghToken");
-  dom.ghRepo = document.querySelector("#ghRepo");
+  dom.pairCodeInput = document.querySelector("#pairCodeInput");
+  dom.pairGenerateButton = document.querySelector("#pairGenerateButton");
+  dom.pairCodeLine = document.querySelector("#pairCodeLine");
+  dom.pairCodeValue = document.querySelector("#pairCodeValue");
   dom.syncConnectButton = document.querySelector("#syncConnectButton");
   dom.syncDisconnectButton = document.querySelector("#syncDisconnectButton");
   dom.syncPushButton = document.querySelector("#syncPushButton");
@@ -206,9 +208,10 @@ function bindEvents() {
     filters.player = dom.historyPlayerFilter.value;
     renderHistory();
   });
-  dom.syncConnectButton.addEventListener("click", connectSync);
-  dom.syncDisconnectButton.addEventListener("click", disconnectSync);
-  dom.syncPushButton.addEventListener("click", pushToRemoteNow);
+  dom.syncConnectButton.addEventListener("click", pairConnect);
+  dom.syncDisconnectButton.addEventListener("click", pairUnpair);
+  dom.syncPushButton.addEventListener("click", pairPushNow);
+  dom.pairGenerateButton.addEventListener("click", pairGenerate);
 
   // Number keys aim at a place, Escape stands down — so the whole board is
   // reachable without touching a mouse.
@@ -2026,54 +2029,124 @@ function showToast(message, options) {
   toastTimer = window.setTimeout(() => dom.toast.classList.remove("visible"), undoable ? 6500 : 2800);
 }
 
-/* ═══════════════════════════════ SHARED BOARD (GitHub) ═══════════════════════════════
-   Browsers can't talk to each other, so live sync needs one shared home for the
-   scores. That home is this repo itself: `data/board.json`, read and written
-   through the GitHub Contents API with a fine-grained token stored per device.
+/* ═══════════════════════════════ SHARED BOARD (flat code) ═══════════════════════════════
+   Every log must reach every device within a second or two, with no accounts and
+   nothing to configure. So the flat shares one six-word code, and the board rides
+   over a public live channel as an encrypted note:
 
-   - No new accounts, no server, no build step. The token lives in per-device
-     localStorage (never in exports, never in the repo).
-   - Push merges by session id (newest `updated` wins), so two flatmates logging
-     at once don't wipe each other out — and a pull-then-push means the shared
-     file only ever gains sessions.
-   - Devices pull every 15 seconds and push ~2 seconds after any change.
+   - The code IS the password. The channel name is derived from it, and the board
+     itself is sealed with AES-GCM under a key derived from it. Anyone holding the
+     six words can read the scores; nobody else can.
+   - One device taps "New code", the rest type the six words once. That's the whole
+     setup. The code lives in per-device localStorage, never in exports.
+   - Every change publishes the whole board (retained), so a newly paired phone
+     gets everything instantly. Merges are by session id, newest `updated` wins,
+     so two flatmates logging at once don't wipe each other out.
+   - The channel is just transport. If it ever drops, the app works locally and
+     catches up on reconnect.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const REMOTE_KEY = "tower-remote-v1";
-const DATA_PATH = "data/board.json";
-let remote = null;
-let remoteTimer = 0;
+const PAIR_BROKER = "wss://broker.hivemq.com:8884/mqtt";
+const PAIR_LIB = "https://unpkg.com/mqtt/dist/mqtt.min.js";
+const PAIR_WORDS = 6;
+
+const WORDS = (
+  "ash beech birch elm hazel oak willow alder yew pine cedar holly juniper maple rowan " +
+  "tower stone stair crown gate arch keep moat spire vault lantern beacon banner shield " +
+  "sword helm cloak drum horn bell lamp chain rope nail anvil forge mill wheel plough " +
+  "field meadow brook river lake mist rain snow hail frost dew fog cloud storm gale " +
+  "dawn dusk noon night star moon sun ember flame smoke ashwood ironwood goldleaf " +
+  "silver copper bronze amber pearl coral shell finch wren crow raven owl hawk lark " +
+  "fox hare deer boar wolf bear otter vole mouse shrew mole bat frog toad newt adder " +
+  "trout salmon pike perch roach bream apple pear plum cherry berry nut grain barley " +
+  "oats wheat rye honey mead ale bread cheese butter milk honeycomb feast board game " +
+  "dice token pawn knight bishop castle queen king rook lance bow arrow quiver target " +
+  "harp lute drum pipe song tale riddle jest laugh cheer brave bold keen swift sure " +
+  "calm bright clear deep high far near long short wide narrow steep level rocky mossy " +
+  "ferny heathery grassy stony sandy pebbly misty rainy snowy windy sunny starry moony " +
+  "amber ivy fern moss lichen clover thistle thorn bramble briar reed sedge rush grass " +
+  "north south east west hill glen crag tor fell moor bog marsh pond pool stream burn " +
+  "isle skerry firth loch ben brae strath kyle ness holm ey ford bridge path road track " +
+  "trail stair gate door hatch latch hinge beam post plank slate tile thatch turf wattle " +
+  "daub lime sand clay chalk flint quartz granite basalt marble alabaster jet opal topaz"
+).split(/\s+/).filter((w, i, all) => w && all.indexOf(w) === i).slice(0, 256);
+
+let pair = null;
+let pairClient = null;
+let pairLibPromise = null;
 let pushTimer = 0;
 let lastPullAt = 0;
-let lastRemoteSha = "";
+let lastMetaAt = "";
+let boardDigest = "";
 
-function loadRemoteCreds() {
+/* Fast non-crypto hash for channel names and change detection. */
+function hash53(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
+}
+
+function normalizeCode(value) {
+  return String(value || "").toLowerCase().trim().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean).join(" ");
+}
+
+function validCode(value) {
+  const words = normalizeCode(value).split(" ").filter(Boolean);
+  if (words.length !== PAIR_WORDS) return false;
+  return words.every((w) => WORDS.includes(w));
+}
+
+function topicFor(code) {
+  return `thetower/${hash53(`channel::${normalizeCode(code)}`)}`;
+}
+
+function digestSessions(sessions) {
+  return hash53(JSON.stringify(sessions.map((s) => [s.id, s.updated, s.results.map((r) => [r.player, r.position, r.points, r.team])])));
+}
+
+function loadPair() {
   try {
     const raw = window.localStorage.getItem(REMOTE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed && parsed.token && parsed.repo) return { token: parsed.token, repo: parsed.repo };
+    if (parsed && validCode(parsed.code)) return { code: normalizeCode(parsed.code) };
   } catch (error) {
-    console.warn("Could not read remote credentials", error);
+    console.warn("Could not read pair code", error);
   }
   return null;
 }
 
-function initSync() {
-  remote = loadRemoteCreds();
-  if (dom.ghToken && remote) dom.ghToken.value = remote.token;
-  if (dom.ghRepo && remote && remote.repo) dom.ghRepo.value = remote.repo;
-  if (remote) {
-    setSyncMessage("Connected — pulling the shared board…");
-    pullFromRemote(true);
-    schedulePoll();
+function initPair() {
+  pair = loadPair();
+  if (pair) {
+    if (dom.pairCodeInput) dom.pairCodeInput.value = pair.code;
+    showPairCode();
+    setSyncMessage("Paired — joining the live board…");
+    pairConnectClient();
   } else {
     setSyncMessage("");
     updateSyncStatus();
   }
   window.addEventListener("online", () => {
-    if (remote) pullFromRemote(true);
+    if (pair) pairConnectClient();
   });
+}
+
+function showPairCode() {
+  if (!dom.pairCodeLine) return;
+  if (pair) {
+    dom.pairCodeValue.textContent = pair.code;
+    dom.pairCodeLine.hidden = false;
+  } else {
+    dom.pairCodeLine.hidden = true;
+  }
 }
 
 function setSyncMessage(message, type) {
@@ -2084,89 +2157,266 @@ function setSyncMessage(message, type) {
 
 function updateSyncStatus() {
   if (dom.syncStatus) {
-    dom.syncStatus.textContent = remote
-      ? "Five souls, one crown · shared live board"
-      : "Five souls, one crown · saved in this browser";
+    dom.syncStatus.textContent = pair
+      ? "Five souls, one crown · live shared board"
+      : "Five souls, one crown · this device only";
   }
   if (dom.storageStatus) {
-    dom.storageStatus.textContent = remote
-      ? `Shared board live${lastPullAt ? ` · synced ${new Date(lastPullAt).toLocaleTimeString()}` : ""}`
-      : "Saved locally in this browser";
+    dom.storageStatus.textContent = pairClient && pairClient.connected
+      ? `Shared board live${lastPullAt ? ` · updated ${new Date(lastPullAt).toLocaleTimeString()}` : ""}`
+      : pair
+        ? "Paired — reconnecting…"
+        : "Saved on this device only";
   }
 }
 
-function ghHeaders() {
-  return {
-    Accept: "application/vnd.github+json",
-    Authorization: `Bearer ${remote.token}`,
-    "Content-Type": "application/json",
-  };
+function pairKeyMaterial(code) {
+  return window.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(`tower-key::${normalizeCode(code)}`),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  ).then((base) => window.crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: new TextEncoder().encode("thetower"), iterations: 50000, hash: "SHA-256" },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  ));
 }
 
-function ghContentsUrl() {
-  return `https://api.github.com/repos/${remote.repo}/contents/${DATA_PATH}`;
-}
-
-function encodeBoard(value) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(value))));
-}
-
-function decodeBoard(content) {
-  return JSON.parse(decodeURIComponent(escape(atob(String(content).replace(/\s/g, "")))));
-}
-
-function connectSync() {
-  const token = dom.ghToken.value.trim();
-  const repo = dom.ghRepo.value.trim().replace(/\/+$/, "");
-  if (!/^(github_pat_|ghp_)/.test(token) || token.length < 20) {
-    setSyncMessage("Paste a GitHub token (starts github_pat_… or ghp_…). See the README for the 2-minute setup.", "error");
-    return;
+function bufToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   }
-  if (!/^[^/]+\/[^/]+$/.test(repo)) {
-    setSyncMessage("Repo should look like DanDL15/boardGame.", "error");
-    return;
-  }
-  remote = { token, repo };
+  return btoa(out);
+}
+
+function b64ToBuf(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function sealBoard(code) {
+  const key = await pairKeyMaterial(code);
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const payload = JSON.stringify({
+    v: 1,
+    at: new Date().toISOString(),
+    doc: { players: state.players, scoring: state.scoring, gameEmoji: state.gameEmoji, sessions: state.sessions },
+  });
+  const cipher = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(payload));
+  return JSON.stringify({ v: 1, iv: bufToB64(iv), data: bufToB64(cipher) });
+}
+
+async function openBoard(code, raw) {
+  const envelope = JSON.parse(raw);
+  if (!envelope || envelope.v !== 1 || !envelope.iv || !envelope.data) throw new Error("bad envelope");
+  const key = await pairKeyMaterial(code);
+  const plain = await window.crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: new Uint8Array(b64ToBuf(envelope.iv)) },
+    key,
+    b64ToBuf(envelope.data)
+  );
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function loadPairLib() {
+  if (window.mqtt) return Promise.resolve();
+  if (pairLibPromise) return pairLibPromise;
+  pairLibPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = PAIR_LIB;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("sync library failed to load"));
+    document.head.appendChild(script);
+    window.setTimeout(() => reject(new Error("sync library timed out")), 15000);
+  });
+  return pairLibPromise;
+}
+
+async function pairConnectClient() {
+  if (!pair) return;
   try {
-    window.localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
+    await loadPairLib();
   } catch (error) {
-    setSyncMessage("Could not save the token in this browser.", "error");
+    console.warn("Pair transport unavailable", error);
+    setSyncMessage("Live sync couldn't start (network?). Your games are still safe here.", "error");
+    updateSyncStatus();
     return;
   }
-  lastRemoteSha = "";
-  setSyncMessage("Connected — pulling the shared board…");
-  updateSyncStatus();
-  pullFromRemote(true);
-  schedulePoll();
+  if (!pair) return;
+  try {
+    if (pairClient) {
+      try { pairClient.end(true); } catch (e) { /* replacing */ }
+    }
+    const client = window.mqtt.connect(PAIR_BROKER, {
+      clean: true,
+      connectTimeout: 8000,
+      reconnectPeriod: 4000,
+      clientId: `tower-${Math.random().toString(36).slice(2, 10)}`,
+    });
+    pairClient = client;
+    const topic = topicFor(pair.code);
+    client.on("connect", () => {
+      client.subscribe(topic, { qos: 1 }, (err) => {
+        if (err) {
+          setSyncMessage("Paired but the channel wouldn't open — still saving here.", "error");
+          return;
+        }
+        setSyncMessage("Live — every game appears on all paired devices within seconds.");
+        updateSyncStatus();
+        publishBoard(); // announce presence + share what we hold
+      });
+    });
+    client.on("message", (arrivedTopic, payload) => {
+      if (arrivedTopic !== topic) return;
+      receiveBoard(String(payload));
+    });
+    client.on("reconnect", updateSyncStatus);
+    client.on("close", updateSyncStatus);
+    client.on("error", () => {
+      setSyncMessage("Live sync hiccup — still saving on this device, will catch up.", "error");
+    });
+  } catch (error) {
+    console.warn("Pair connect failed", error);
+  }
 }
 
-function disconnectSync() {
-  remote = null;
-  window.clearTimeout(remoteTimer);
+/* Debounced: roster typing saves constantly, the channel shouldn't flap. */
+function pushToRemote() {
+  if (!pair) return;
   window.clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(() => publishBoard(), 1200);
+}
+
+async function publishBoard() {
+  if (!pair || !pairClient || !pairClient.connected) return;
+  try {
+    const sealed = await sealBoard(pair.code);
+    pairClient.publish(topicFor(pair.code), sealed, { qos: 1, retain: true }, (err) => {
+      if (err) console.warn("Publish failed", err);
+    });
+  } catch (error) {
+    console.warn("Seal failed", error);
+  }
+}
+
+async function pairPushNow() {
+  window.clearTimeout(pushTimer);
+  if (!pair) {
+    showToast("Pair a flat code first — Vault, bottom of the page.");
+    switchTab("vault");
+    return;
+  }
+  await publishBoard();
+  showToast("Sent to the flat.");
+}
+
+async function receiveBoard(raw) {
+  if (!pair) return;
+  let envelope;
+  try {
+    envelope = await openBoard(pair.code, raw);
+  } catch (error) {
+    return; // another code's noise, or a garbled note — ignore
+  }
+  if (!envelope || !envelope.doc || !Array.isArray(envelope.doc.sessions)) return;
+  const incoming = normalizeState({
+    players: Array.isArray(envelope.doc.players) && envelope.doc.players.length ? envelope.doc.players : state.players,
+    scoring: envelope.doc.scoring || state.scoring,
+    gameEmoji: envelope.doc.gameEmoji || state.gameEmoji,
+    sessions: envelope.doc.sessions,
+  });
+  const mergedSessions = mergeSessions(state.sessions, incoming.sessions);
+  const incomingAt = String(envelope.at || "");
+  const useIncomingMeta = incomingAt && (!lastMetaAt || incomingAt >= lastMetaAt);
+  if (useIncomingMeta) lastMetaAt = incomingAt;
+
+  const next = {
+    version: 1,
+    players: useIncomingMeta ? incoming.players : state.players,
+    scoring: useIncomingMeta ? incoming.scoring : state.scoring,
+    gameEmoji: useIncomingMeta ? incoming.gameEmoji : state.gameEmoji,
+    sessions: mergedSessions,
+  };
+  if (digestSessions(next.sessions) === digestSessions(state.sessions) &&
+      JSON.stringify(next.players) === JSON.stringify(state.players)) {
+    lastPullAt = Date.now();
+    updateSyncStatus();
+    return; // nothing new — most messages end here
+  }
+  // Don't clobber a half-filled form with a live arrival.
+  const localDraft = readFormDraft();
+  const keepEditing = editingSessionId;
+  state = next;
+  lastPullAt = Date.now();
+  saveStateLocalOnly();
+  renderDashboard();
+  renderScoringInputs();
+  renderRoster();
+  renderGameEmojiList();
+  resetForm(localDraft ? { draft: localDraft } : undefined);
+  if (keepEditing && !state.sessions.some((s) => s.id === keepEditing)) cancelEdit();
+  updateSyncStatus();
+  showToast("New game arrived from the flat.");
+}
+
+function pairGenerate() {
+  const words = [];
+  const pool = new Uint32Array(PAIR_WORDS);
+  window.crypto.getRandomValues(pool);
+  for (let i = 0; i < PAIR_WORDS; i++) words.push(WORDS[pool[i] % WORDS.length]);
+  const code = words.join(" ");
+  storePair(code);
+  if (dom.pairCodeInput) dom.pairCodeInput.value = code;
+  showToast("Flat code created — read it to the flat.");
+}
+
+function storePair(code) {
+  pair = { code: normalizeCode(code) };
+  try {
+    window.localStorage.setItem(REMOTE_KEY, JSON.stringify(pair));
+  } catch (error) {
+    console.warn("Could not store pair code", error);
+  }
+  showPairCode();
+  updateSyncStatus();
+  pairConnectClient();
+}
+
+function pairConnect() {
+  const code = dom.pairCodeInput.value;
+  if (!validCode(code)) {
+    setSyncMessage("Type the six words exactly as shown on the other device — or tap New code here and read yours out.", "error");
+    return;
+  }
+  storePair(code);
+  setSyncMessage("Paired — joining the live board…");
+  showToast("Paired. New games now arrive by themselves.");
+}
+
+function pairUnpair() {
+  pair = null;
+  lastMetaAt = "";
+  try {
+    if (pairClient) pairClient.end(true);
+  } catch (error) { /* already gone */ }
+  pairClient = null;
   try {
     window.localStorage.removeItem(REMOTE_KEY);
   } catch (error) {
-    console.warn("Could not clear remote credentials", error);
+    console.warn("Could not clear pair code", error);
   }
-  setSyncMessage("Disconnected — back to this browser only.");
+  showPairCode();
+  setSyncMessage("Unpaired — this device keeps its own copy from here.");
   updateSyncStatus();
-}
-
-function schedulePoll() {
-  window.clearTimeout(remoteTimer);
-  if (!remote) return;
-  remoteTimer = window.setTimeout(async () => {
-    await pullFromRemote(false);
-    schedulePoll();
-  }, 15000);
-}
-
-/* Debounced: roster typing saves constantly, the network shouldn't. */
-function pushToRemote() {
-  if (!remote) return;
-  window.clearTimeout(pushTimer);
-  pushTimer = window.setTimeout(() => pushNow(), 2000);
 }
 
 /* Merge two session lists by id — newest `updated` wins each id. */
@@ -2182,122 +2432,7 @@ function mergeSessions(local, incoming) {
   return [...byId.values()].sort(compareSessions);
 }
 
-async function pushNow() {
-  if (!remote) return;
-  try {
-    // Pull first so simultaneous loggers merge instead of overwriting.
-    const getRes = await fetch(ghContentsUrl(), { headers: ghHeaders() });
-    let sha = "";
-    let remoteSessions = [];
-    let remoteDoc = null;
-    if (getRes.status === 200) {
-      const file = await getRes.json();
-      sha = file.sha || "";
-      lastRemoteSha = sha;
-      try {
-        remoteDoc = decodeBoard(file.content);
-        if (remoteDoc && Array.isArray(remoteDoc.sessions)) remoteSessions = remoteDoc.sessions;
-      } catch (error) {
-        console.warn("Shared file unreadable, will overwrite", error);
-      }
-    } else if (getRes.status !== 404) {
-      throw new Error(`GitHub said ${getRes.status} — is the token right?`);
-    }
-
-    const merged = normalizeState({
-      players: state.players,
-      scoring: state.scoring,
-      gameEmoji: state.gameEmoji,
-      sessions: mergeSessions(remoteSessions, state.sessions),
-    });
-    state = merged;
-    saveStateLocalOnly();
-
-    const payload = {
-      ...state,
-      syncedAt: new Date().toISOString(),
-      sessions: state.sessions,
-    };
-    const putRes = await fetch(ghContentsUrl(), {
-      method: "PUT",
-      headers: ghHeaders(),
-      body: JSON.stringify({
-        message: `Tower sync: ${state.sessions.length} sessions`,
-        content: encodeBoard(payload),
-        ...(sha ? { sha } : {}),
-      }),
-    });
-    if (putRes.status === 422 || putRes.status === 409) {
-      // Someone beat us to it — pull their change and try once more.
-      await pullFromRemote(false);
-      await pushNow();
-      return;
-    }
-    if (!putRes.ok) throw new Error(`GitHub said ${putRes.status}.`);
-    const written = await putRes.json();
-    lastRemoteSha = (written.content && written.content.sha) || lastRemoteSha;
-    setSyncMessage(`Shared board live — ${state.sessions.length} sessions.`);
-    renderDashboard();
-  } catch (error) {
-    console.warn("Push failed", error);
-    setSyncMessage(`Push failed (${error.message}). Your games are still safe here.`, "error");
-  }
-}
-
-async function pushToRemoteNow() {
-  window.clearTimeout(pushTimer);
-  await pushNow();
-}
-
-async function pullFromRemote(announce) {
-  if (!remote) return;
-  try {
-    const res = await fetch(ghContentsUrl(), { headers: ghHeaders() });
-    if (res.status === 404) {
-      // No shared file yet — this device seeds it.
-      if (announce) setSyncMessage("No shared file yet — pushing this device up…");
-      await pushNow();
-      if (announce) {
-        setSyncMessage(`Shared board live — ${state.sessions.length} sessions.`);
-        showToast("Shared board synced.");
-      }
-      return;
-    }
-    if (!res.ok) throw new Error(`GitHub said ${res.status}.`);
-    const file = await res.json();
-    if (file.sha === lastRemoteSha) return; // nothing new
-    lastRemoteSha = file.sha || lastRemoteSha;
-    const doc = decodeBoard(file.content);
-    if (!doc || !Array.isArray(doc.sessions)) throw new Error("The shared file doesn't look like a Tower board.");
-
-    const merged = normalizeState({
-      players: Array.isArray(doc.players) && doc.players.length ? doc.players : state.players,
-      scoring: doc.scoring || state.scoring,
-      gameEmoji: doc.gameEmoji || state.gameEmoji,
-      sessions: mergeSessions(state.sessions, doc.sessions),
-    });
-    // Don't clobber a half-filled form with a background pull.
-    const localDraft = readFormDraft();
-    state = merged;
-    lastPullAt = Date.now();
-    saveStateLocalOnly();
-    renderDashboard();
-    renderScoringInputs();
-    renderRoster();
-    renderGameEmojiList();
-    resetForm(localDraft ? { draft: localDraft } : undefined);
-    updateSyncStatus();
-    if (announce) {
-      setSyncMessage(`Shared board live — ${state.sessions.length} sessions.`);
-      showToast("Shared board synced.");
-    }
-  } catch (error) {
-    console.warn("Pull failed", error);
-    if (announce) setSyncMessage(`Could not reach the shared board (${error.message}) — still showing this device.`, "error");
-  }
-}
-
-/* saveState() pushes; the pull path must write without pushing back. */
+/* saveState() pushes; the receive path must write without pushing back. */
 function saveStateLocalOnly() {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));

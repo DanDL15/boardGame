@@ -2526,6 +2526,26 @@ select.field option {
   gap: 12px;
 }
 
+.pair-code-line {
+  margin: 0 0 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  background: rgba(118, 183, 42, 0.08);
+  color: var(--parchment-dim);
+  font-size: 13px;
+}
+
+.pair-code-line[hidden] {
+  display: none;
+}
+
+.pair-code-line strong {
+  color: var(--leaf-pale);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
 @media (max-width: 680px) {
   .tab-link {
     padding: 8px 6px;
