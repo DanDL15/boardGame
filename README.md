@@ -6,23 +6,23 @@ and keep the eternal ledger.
 **[Live site →](https://dan-dl15.github.io/boardGame/)** · Runs entirely in your browser ·
 No accounts, no server, no build step, no cost.
 
-The flat is called The Tower, so the flat's scoreboard is a tower: stone, iron, gold leaf, and
-candlelight. Five finishing places are five stones, the leader sits on the tallest one, and
-everything you log is carved into the chronicle underneath.
+The flat is called The Tower, so the flat's scoreboard is a tower: ivy stone, storm
+slate, and Stirling green beacons — Heritage `#006938`, Energy `#76b72a`. The leader
+sits at the top of the tower, and everything you log is carved into the chronicle.
 
 ---
 
 ## ✨ How it works
 
-The page reads top to bottom in the order you actually use it:
+The page is split into tabs, each with one job:
 
-| Section | What it's for |
+| Tab | What it's for |
 | --- | --- |
-| **The Ledger** | The scoreboard. Four carved tablets, the top three on raised stones, everyone else ranked below. |
-| **Log a Session** | The board — five stones, one per finishing place. |
-| **The Chronicle** | Every session, newest first, editable and removable. |
-| **Standings by Game** | Who actually dominates each individual game. |
-| **The Vault** | Players, game icons, default scoring, and your JSON backup. |
+| **Tower** | The scoreboard. Four carved tablets, the top three on the tower, everyone else ranked below, plus team honours when team games exist. |
+| **Log** | The board — five stones, one per finishing place. Solo or teams. |
+| **Chronicle** | Every session, newest first, searchable and filterable. Two taps to remove — nothing vanishes by accident. |
+| **Stats** | Best single game per title, win streaks and form, head-to-head matrix, points over time, standings by game. |
+| **Vault** | Players, game icons, default scoring, shared-board connection, and your JSON backup. |
 
 ## 🎯 Logging a session
 
@@ -46,6 +46,18 @@ Three shortcuts sit above the board:
 Keyboard: <kbd>1</kbd>–<kbd>5</kbd> aim at a place, <kbd>Esc</kbd> stands down. Typing in any text
 box is left alone.
 
+## 👥 Team games
+
+Flip the **Teams** switch on the Log tab, name both sides, and each filled stone grows an
+A/B switch. Points still belong to places; honours are counted per player *and* per team,
+and the Tower tab grows a Team Honours table once a team game exists.
+
+## 🛡️ Deleting is deliberately hard
+
+Removing a session takes **two taps** — the first arms the button ("Tap again to confirm"),
+the second does it, and the arm expires after 6 seconds. Clearing everything takes two taps
+plus an 8-second window. Every destructive action offers **Undo** in the confirmation toast.
+
 The board **starts empty** on purpose. It used to arrive pre-filled with the previous game's exact
 result, which looked like a finished entry and made duplicate logging almost unavoidable.
 
@@ -53,7 +65,11 @@ Logging or removing a session offers a real **Undo** in the confirmation toast.
 
 ## ✨ Features
 
-- **Leaderboard first** — the scoreboard is the first thing on the page, not the last.
+- **Leaderboard first** — the Tower is the default tab, not buried at the bottom.
+- **Tabs, not one long scroll** — Tower / Log / Chronicle / Stats / Vault, deep-linkable via `#/…`.
+- **Team games** — A/B sides with per-team honours.
+- **Two-tap delete** — armed confirms, expiring arms, real undo.
+- **Stats that settle arguments** — best single game per title, streaks, head-to-head, form, points-over-time.
 - **Four stat tablets** — sessions, distinct games, points awarded, and the reigning champion.
 - **Aim and swap** — put anyone in any place, and fix the order by swapping two stones.
 - **One-tap logging** — "everyone played" for the usual case.
@@ -69,18 +85,54 @@ Logging or removing a session offers a real **Undo** in the confirmation toast.
 
 ## 🗄️ Where your data lives
 
-Everything is stored in your browser's `localStorage`. There is no account and no server, so:
+Out of the box everything is stored in your browser's `localStorage`:
 
 - ✅ Fast, private, and free to host
 - ✅ Works offline once loaded
-- ⚠️ **Each browser and device keeps its own copy** — the leaderboard is not shared between people
+- ⚠️ **Each browser and device keeps its own copy** — your laptop doesn't see your phone
 - ⚠️ Clearing site data removes your games
 
 **Use _Export_ before switching devices or clearing your browser.** Use _Import_ to restore a
 backup.
 
-If you need one genuinely shared live scoreboard, that requires a hosted database and accounts —
-GitHub Pages only serves static files.
+## ☁️ One shared live board (10-minute setup)
+
+Browsers can't talk to each other, so instant phone ↔ laptop sync needs one shared database.
+The app speaks to a free **Supabase** project — no server code, no build step:
+
+1. Create a free project at <https://supabase.com> (one per flat, not per person).
+2. Open the **SQL Editor** and run:
+   ```sql
+   create table tower_meta (
+     id int primary key,
+     players jsonb not null,
+     scoring jsonb not null,
+     "gameEmoji" jsonb not null,
+     updated_at timestamptz not null default now()
+   );
+   create table tower_sessions (
+     id text primary key,
+     date date not null,
+     game text not null,
+     mode text not null default 'solo',
+     teams jsonb not null default '{"A":"Team A","B":"Team B"}',
+     notes text not null default '',
+     results jsonb not null,
+     updated_at timestamptz not null default now()
+   );
+   alter table tower_meta enable row level security;
+   alter table tower_sessions enable row level security;
+   create policy "open" on tower_meta for all using (true) with check (true);
+   create policy "open" on tower_sessions for all using (true) with check (true);
+   ```
+   (Open policies because the anon key ships in the page — fine for a flat's game scores,
+   never for secrets.)
+3. On each device, open the Tower → **Vault → Shared Board**, paste the project URL and
+   **anon** key, and tap **Connect**. Then tap **Push this device ↑** once from the device
+   with the real history.
+
+After that every save pushes within ~2 seconds and every device pulls every 15 seconds.
+Keys stay on each device and are never included in exports.
 
 ## 🚀 Run it locally
 
@@ -143,9 +195,10 @@ Colours, spacing, and the whole torch-lit palette live in the `:root` block at t
 
 | File | Role |
 | --- | --- |
-| `index.html` | The single page |
+| `index.html` | The single page — five tabs |
 | `styles.css` | The Tower theme, design tokens, responsive layout |
-| `app.js` | State, rendering, validation, import/export |
+| `app.js` | State, rendering, validation, teams, stats, Supabase sync, import/export |
+| `assets/tower-bg.jpg` | The tower painting, compressed for phones |
 | `404.html` | Redirects stray URLs to the dashboard |
 | `dev/dom-stub.js` | Minimal DOM used by the self-test |
 | `dev/selftest.js` | The assertions |

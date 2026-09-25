@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#10151d" />
+    <meta name="theme-color" content="#0a120d" />
     <meta
       name="description"
-      content="The Tower — a board game scoreboard for a household of five. Log sessions, settle places, and keep the eternal scoreboard."
+      content="The Tower — the shared board game scoreboard for a household of five. Log sessions, climb the tower, hold the crown."
     />
     <title>The Tower · Board Game Scoreboard</title>
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230b0a09'/><path d='M18 54V22h4v-4h4v4h4v-4h4v4h4v-4h4v4h4v32z' fill='%23c9a227'/><rect x='28' y='38' width='8' height='16' rx='4' fill='%230b0a09'/></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230a120d'/><path d='M18 54V22h4v-4h4v4h4v-4h4v4h4v-4h4v4h4v32z' fill='%2376b72a'/><rect x='28' y='38' width='8' height='16' rx='4' fill='%230a120d'/></svg>"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,29 +24,22 @@
   </head>
   <body>
     <div class="page-shell">
-      <!-- ══════════════════════════ CREST ══════════════════════════ -->
+      <!-- ══════════════════════════ CREST + TABS ══════════════════════════ -->
       <header class="topbar">
-        <a class="brand" href="#ledgerSection" aria-label="The Tower, back to the top of the ledger">
+        <a class="brand" href="#/tower" aria-label="The Tower — the leaderboard">
           <span class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 64 64" class="tower-glyph">
               <path d="M12 56V20h5v-5h5v5h5v-5h5v5h5v-5h5v5h5v36z" fill="currentColor" />
-              <path d="M28 56V40a4 4 0 0 1 8 0v16z" fill="#0b0a09" />
-              <rect x="20" y="26" width="4" height="8" fill="#0b0a09" />
-              <rect x="40" y="26" width="4" height="8" fill="#0b0a09" />
+              <path d="M28 56V40a4 4 0 0 1 8 0v16z" fill="#0a120d" />
+              <rect x="20" y="26" width="4" height="8" fill="#0a120d" />
+              <rect x="40" y="26" width="4" height="8" fill="#0a120d" />
             </svg>
           </span>
           <span class="brand-copy">
             <strong>The Tower</strong>
-            <small>Board game scoreboard · five souls, one crown</small>
+            <small id="syncStatus">Five souls, one crown · saved in this browser</small>
           </span>
         </a>
-
-        <nav class="crest-nav" aria-label="Jump to a part of the page">
-          <a href="#ledgerSection">Ledger</a>
-          <a href="#logSection">Log a game</a>
-          <a href="#chronicleSection">Chronicle</a>
-          <a href="#vaultSection">The Vault</a>
-        </nav>
 
         <div class="top-actions" aria-label="Data actions">
           <button class="button button-quiet" id="exportButton" type="button">Export</button>
@@ -55,12 +48,20 @@
         </div>
       </header>
 
+      <nav class="tabbar" id="tabbar" aria-label="Sections">
+        <a class="tab-link" href="#/tower" data-tab="tower" aria-label="The Tower — leaderboard">Tower</a>
+        <a class="tab-link" href="#/log" data-tab="log" aria-label="Log a game">Log</a>
+        <a class="tab-link" href="#/chronicle" data-tab="chronicle" aria-label="The Chronicle — history">Chronicle</a>
+        <a class="tab-link" href="#/stats" data-tab="stats" aria-label="Stats — records and rivalries">Stats</a>
+        <a class="tab-link" href="#/vault" data-tab="vault" aria-label="The Vault — settings">Vault</a>
+      </nav>
+
       <main>
-        <!-- ══════════════════ THE LEDGER — the scoreboard, first thing you see ══════════════════ -->
-        <section class="section section-first" id="ledgerSection" aria-labelledby="leaderboardTitle">
+        <!-- ══════════════════ THE TOWER — the leaderboard ══════════════════ -->
+        <section class="section section-first tab-panel" id="towerSection" data-panel="tower" aria-labelledby="leaderboardTitle">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">The Ledger</p>
+              <p class="section-kicker">The Tower</p>
               <h1 id="leaderboardTitle">Who Holds the Crown</h1>
             </div>
             <p class="section-description" id="leaderboardSummary"></p>
@@ -68,17 +69,40 @@
 
           <div class="stat-row" id="ledgerStats" aria-label="Ledger at a glance"></div>
 
-          <h2 class="sr-only">Top three</h2>
-          <div class="triumvirate" id="podium" aria-label="Top three players"></div>
+          <div class="tower-wrap" aria-label="The tower standings">
+            <svg class="tower-backdrop" viewBox="0 0 200 260" aria-hidden="true">
+              <path
+                d="M70 250 V70 l-8 -6 v-10 h8 v-6 h8 v6 h8 v-6 h8 v6 h8 v-6 h8 v6 h8 v-6 h8 v6 h8 v10 l-8 6 V250 Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <path d="M92 250 v-28 a8 8 0 0 1 16 0 v28" fill="none" stroke="currentColor" stroke-width="2" />
+              <line x1="78" y1="110" x2="122" y2="110" stroke="currentColor" stroke-width="1.5" />
+              <line x1="78" y1="150" x2="122" y2="150" stroke="currentColor" stroke-width="1.5" />
+              <line x1="78" y1="190" x2="122" y2="190" stroke="currentColor" stroke-width="1.5" />
+              <line x1="100" y1="18" x2="100" y2="4" stroke="currentColor" stroke-width="2" />
+              <path d="M100 4 l22 6 -22 6 Z" fill="currentColor" />
+            </svg>
+            <div class="tower-floors">
+              <h2 class="sr-only">Top three</h2>
+              <div class="triumvirate" id="podium" aria-label="Top three players"></div>
 
-          <div class="roll-block" id="rollBlock">
-            <h3 class="roll-heading" id="rollHeading">The Rest of the Household</h3>
-            <div class="roll" id="leaderboardRows"></div>
+              <div class="roll-block" id="rollBlock">
+                <h3 class="roll-heading" id="rollHeading">The Rest of the Household</h3>
+                <div class="roll" id="leaderboardRows"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="roll-block" id="teamBlock" hidden>
+            <h3 class="roll-heading">Team Honours</h3>
+            <div class="roll" id="teamRows"></div>
           </div>
         </section>
 
         <!-- ══════════════════ LOG A SESSION ══════════════════ -->
-        <section class="section" id="logSection" aria-labelledby="logTitle">
+        <section class="section section-first tab-panel" id="logSection" data-panel="log" aria-labelledby="logTitle" hidden>
           <div class="section-heading">
             <div>
               <p class="section-kicker">Raise a New Record</p>
@@ -95,6 +119,22 @@
           </div>
 
           <form class="card game-form" id="gameForm" novalidate>
+            <div class="mode-row" role="group" aria-label="Solo or team game">
+              <button class="chip-button is-primary" id="modeSoloButton" type="button" aria-pressed="true">Solo</button>
+              <button class="chip-button" id="modeTeamsButton" type="button" aria-pressed="false">Teams</button>
+            </div>
+
+            <div class="team-names" id="teamNames" hidden>
+              <div class="setup-field">
+                <label for="teamAName">Team A</label>
+                <input class="field" id="teamAName" name="teamA" type="text" maxlength="24" value="Team A" />
+              </div>
+              <div class="setup-field">
+                <label for="teamBName">Team B</label>
+                <input class="field" id="teamBName" name="teamB" type="text" maxlength="24" value="Team B" />
+              </div>
+            </div>
+
             <div class="form-setup">
               <div class="setup-field setup-game">
                 <label for="gameSelect">Game</label>
@@ -151,20 +191,49 @@
         </section>
 
         <!-- ══════════════════ THE CHRONICLE ══════════════════ -->
-        <section class="section" id="chronicleSection" aria-labelledby="historyTitle">
+        <section class="section section-first tab-panel" id="chronicleSection" data-panel="chronicle" aria-labelledby="historyTitle" hidden>
           <div class="section-heading">
             <div>
               <p class="section-kicker">Written in Stone</p>
               <h2 id="historyTitle">The Chronicle</h2>
             </div>
-            <p class="section-description">Every session, newest first. Edit or remove any of them.</p>
+            <p class="section-description">Every session, newest first. Two taps to remove — nothing vanishes by accident.</p>
+          </div>
+          <div class="filters" role="search" aria-label="Filter the chronicle">
+            <input class="field filters-search" id="historySearch" type="search" placeholder="Search notes or games…" aria-label="Search notes or games" />
+            <select class="field" id="historyGameFilter" aria-label="Filter by game"></select>
+            <select class="field" id="historyPlayerFilter" aria-label="Filter by player"></select>
           </div>
           <div class="history-list" id="historyList"></div>
         </section>
 
-        <!-- ══════════════════ STANDINGS BY GAME ══════════════════ -->
-        <section class="section" id="gamesSection" aria-labelledby="gamesTitle">
+        <!-- ══════════════════ STATS ══════════════════ -->
+        <section class="section section-first tab-panel" id="statsSection" data-panel="stats" aria-labelledby="statsTitle" hidden>
           <div class="section-heading">
+            <div>
+              <p class="section-kicker">Records &amp; Rivalries</p>
+              <h2 id="statsTitle">Stats</h2>
+            </div>
+            <p class="section-description">Streaks, head-to-heads, form, and the best single game ever played.</p>
+          </div>
+
+          <h3 class="roll-heading">Best Single Game</h3>
+          <div class="games-grid" id="bestGrid"></div>
+
+          <h3 class="roll-heading stats-subhead">Streaks &amp; Form</h3>
+          <div class="roll" id="streakRows"></div>
+
+          <h3 class="roll-heading stats-subhead">Head to Head <span class="h2h-hint">— times finished ahead</span></h3>
+          <div class="card h2h-card">
+            <div class="h2h-table-wrap">
+              <table class="h2h-table" id="h2hTable" aria-label="Head to head results"></table>
+            </div>
+          </div>
+
+          <h3 class="roll-heading stats-subhead">Points Over Time <span class="h2h-hint">— last 10 plays</span></h3>
+          <div class="roll" id="formRows"></div>
+
+          <div class="section-heading stats-standings-head">
             <div>
               <p class="section-kicker">Specialisms</p>
               <h2 id="gamesTitle">Standings by Game</h2>
@@ -175,19 +244,60 @@
         </section>
 
         <!-- ══════════════════ THE VAULT ══════════════════ -->
-        <section class="section settings-section" id="vaultSection" aria-labelledby="settingsTitle">
+        <section class="section section-first tab-panel settings-section" id="vaultSection" data-panel="vault" aria-labelledby="settingsTitle" hidden>
           <div class="section-heading">
             <div>
               <p class="section-kicker">The Vault</p>
               <h2 id="settingsTitle">Settings</h2>
             </div>
-            <p class="section-description">Players, icons, scoring, and your backup.</p>
+            <p class="section-description">Players, icons, scoring, sharing, and your backup.</p>
           </div>
+
+          <details class="card details-card" open>
+            <summary>
+              <span>
+                <span class="summary-icon" aria-hidden="true">◈</span>
+                <span>
+                  <span class="summary-title">Shared Board</span>
+                  <span class="summary-subtitle">One live scoreboard for all five phones. Needs a free Supabase project.</span>
+                </span>
+              </span>
+              <span class="summary-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="settings-content">
+              <div class="settings-block settings-block-wide">
+                <p class="mini-label">Live sync</p>
+                <h3>Share Across Devices</h3>
+                <p class="muted-copy">
+                  This page alone cannot sync — browsers can't talk to each other. Paste Supabase
+                  credentials once per device and every log appears everywhere within seconds.
+                  Keys stay on your device, never in the backup file. See the README for the
+                  10-minute setup.
+                </p>
+                <div class="sync-grid">
+                  <div class="setup-field">
+                    <label for="sbUrl">Project URL</label>
+                    <input class="field" id="sbUrl" type="url" placeholder="https://xyz.supabase.co" autocomplete="off" />
+                  </div>
+                  <div class="setup-field">
+                    <label for="sbKey">Anon key</label>
+                    <input class="field" id="sbKey" type="password" placeholder="eyJ…" autocomplete="off" />
+                  </div>
+                </div>
+                <div class="settings-buttons">
+                  <button class="button button-primary" id="syncConnectButton" type="button">Connect</button>
+                  <button class="button button-secondary" id="syncDisconnectButton" type="button">Disconnect</button>
+                  <button class="button button-secondary" id="syncPushButton" type="button">Push this device ↑</button>
+                </div>
+                <p class="settings-message" id="syncMessage" role="status" aria-live="polite"></p>
+              </div>
+            </div>
+          </details>
 
           <details class="card details-card">
             <summary>
               <span>
-                <span class="summary-icon" aria-hidden="true">⚙️</span>
+                <span class="summary-icon" aria-hidden="true">◈</span>
                 <span>
                   <span class="summary-title">Household &amp; Scoring</span>
                   <span class="summary-subtitle">Players, game icons, and points per place.</span>
@@ -234,8 +344,9 @@
                 <p class="mini-label">Your data</p>
                 <h3>Keep a Backup</h3>
                 <p class="muted-copy">
-                  Games are stored in this browser only — there is no server and no account. Export
-                  before switching devices or clearing browser data.
+                  Games are stored in this browser only until you connect sharing. Export
+                  before switching devices or clearing browser data. Clearing needs two taps —
+                  and everything is undoable.
                 </p>
                 <div class="settings-buttons">
                   <button class="button button-secondary" id="dataExportButton" type="button">Download JSON</button>

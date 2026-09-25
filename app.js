@@ -71,6 +71,18 @@ let editingSessionId = null;
 let aimedPosition = null;
 /* Last destructive action, so the toast can offer a real undo. */
 let undoSnapshot = null;
+/* Solo or team logging. */
+let formMode = "solo";
+/* Two-tap delete: first tap arms, second confirms. Nothing vanishes on one tap. */
+let armedDeleteId = null;
+let armedDeleteTimer = 0;
+let armedClearAll = false;
+let armedClearTimer = 0;
+/* Chronicle filters (not persisted). */
+const filters = { q: "", game: "", player: "" };
+
+const TABS = ["tower", "log", "chronicle", "stats", "vault"];
+let activeTab = "tower";
 
 const dom = {};
 
@@ -83,9 +95,11 @@ function init() {
   renderScoringInputs();
   renderRoster();
   renderGameEmojiList();
+  initTabs();
   renderDashboard();
   resetForm();
   updateStorageStatus();
+  initSync();
 }
 
 function cacheDom() {
@@ -127,11 +141,33 @@ function cacheDom() {
   dom.undoButton = document.querySelector("#undoButton");
   dom.rollBlock = document.querySelector("#rollBlock");
   dom.rollHeading = document.querySelector("#rollHeading");
+  dom.teamBlock = document.querySelector("#teamBlock");
+  dom.teamRows = document.querySelector("#teamRows");
   dom.rosterList = document.querySelector("#rosterList");
   dom.rosterMessage = document.querySelector("#rosterMessage");
   dom.gameEmojiList = document.querySelector("#gameEmojiList");
   dom.gameEmojiMessage = document.querySelector("#gameEmojiMessage");
   dom.logSection = document.querySelector("#logSection");
+  dom.tabbar = document.querySelector("#tabbar");
+  dom.syncStatus = document.querySelector("#syncStatus");
+  dom.modeSoloButton = document.querySelector("#modeSoloButton");
+  dom.modeTeamsButton = document.querySelector("#modeTeamsButton");
+  dom.teamNames = document.querySelector("#teamNames");
+  dom.teamAName = document.querySelector("#teamAName");
+  dom.teamBName = document.querySelector("#teamBName");
+  dom.historySearch = document.querySelector("#historySearch");
+  dom.historyGameFilter = document.querySelector("#historyGameFilter");
+  dom.historyPlayerFilter = document.querySelector("#historyPlayerFilter");
+  dom.bestGrid = document.querySelector("#bestGrid");
+  dom.streakRows = document.querySelector("#streakRows");
+  dom.h2hTable = document.querySelector("#h2hTable");
+  dom.formChart = document.querySelector("#formRows");
+  dom.sbUrl = document.querySelector("#sbUrl");
+  dom.sbKey = document.querySelector("#sbKey");
+  dom.syncConnectButton = document.querySelector("#syncConnectButton");
+  dom.syncDisconnectButton = document.querySelector("#syncDisconnectButton");
+  dom.syncPushButton = document.querySelector("#syncPushButton");
+  dom.syncMessage = document.querySelector("#syncMessage");
 }
 
 function bindEvents() {
@@ -153,6 +189,26 @@ function bindEvents() {
   dom.repeatLastButton.addEventListener("click", repeatLastGame);
   dom.clearBoardButton.addEventListener("click", clearBoard);
   dom.undoButton.addEventListener("click", performUndo);
+  dom.tabbar.addEventListener("click", handleTabClick);
+  dom.modeSoloButton.addEventListener("click", () => setFormMode("solo"));
+  dom.modeTeamsButton.addEventListener("click", () => setFormMode("teams"));
+  dom.teamAName.addEventListener("input", syncTeamNames);
+  dom.teamBName.addEventListener("input", syncTeamNames);
+  dom.historySearch.addEventListener("input", () => {
+    filters.q = dom.historySearch.value.trim().toLowerCase();
+    renderHistory();
+  });
+  dom.historyGameFilter.addEventListener("change", () => {
+    filters.game = dom.historyGameFilter.value;
+    renderHistory();
+  });
+  dom.historyPlayerFilter.addEventListener("change", () => {
+    filters.player = dom.historyPlayerFilter.value;
+    renderHistory();
+  });
+  dom.syncConnectButton.addEventListener("click", connectSync);
+  dom.syncDisconnectButton.addEventListener("click", disconnectSync);
+  dom.syncPushButton.addEventListener("click", pushToRemoteNow);
 
   // Number keys aim at a place, Escape stands down — so the whole board is
   // reachable without touching a mouse.
@@ -175,6 +231,8 @@ function bindEvents() {
     aimAt(aimedPosition === position ? null : position);
   });
 
+  window.addEventListener("hashchange", routeFromHash);
+
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY || !event.newValue) return;
     try {
@@ -187,6 +245,49 @@ function bindEvents() {
       console.warn("Could not sync the tracker tab", error);
     }
   });
+}
+
+/* ═══════════════════════════════ TABS ═══════════════════════════════ */
+
+function initTabs() {
+  routeFromHash();
+}
+
+function routeFromHash() {
+  const hash = typeof window.location === "undefined" ? "" : String(window.location.hash || "");
+  const match = hash.match(/^#\/(\w+)/);
+  switchTab(match && TABS.includes(match[1]) ? match[1] : "tower", { replace: true });
+}
+
+function handleTabClick(event) {
+  const link = event.target.closest("[data-tab]");
+  if (!link) return;
+  event.preventDefault();
+  switchTab(link.dataset.tab);
+}
+
+function switchTab(name, options) {
+  if (!TABS.includes(name)) name = "tower";
+  activeTab = name;
+  const panels = document.querySelectorAll("[data-panel]");
+  for (let i = 0; i < panels.length; i++) {
+    panels[i].hidden = panels[i].dataset.panel !== name;
+  }
+  const links = dom.tabbar.querySelectorAll("[data-tab]");
+  for (let j = 0; j < links.length; j++) {
+    const on = links[j].dataset.tab === name;
+    links[j].classList.toggle("is-active", on);
+    if (on) links[j].setAttribute("aria-current", "page");
+    else links[j].removeAttribute("aria-current");
+  }
+  const want = `#/${name}`;
+  if (!(options && options.replace) && typeof window.location !== "undefined" && window.location.hash !== want) {
+    window.location.hash = want;
+  }
+  const titles = { tower: "The Tower", log: "Log a Session", chronicle: "The Chronicle", stats: "Stats", vault: "The Vault" };
+  const section = document.querySelector(`[data-panel="${name}"]`);
+  if (section && !(options && options.replace)) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.title = `${titles[name]} · The Tower`;
 }
 
 function createEmptyState() {
@@ -271,6 +372,12 @@ function normalizeSession(candidate) {
   const game = String(candidate.game || "").replace(/[\r\n]/g, " ").trim();
   if (!isDateString(date) || !game) return null;
 
+  const mode = candidate.mode === "teams" ? "teams" : "solo";
+  const teams = {
+    A: String((candidate.teams && candidate.teams.A) || "Team A").trim().slice(0, 24) || "Team A",
+    B: String((candidate.teams && candidate.teams.B) || "Team B").trim().slice(0, 24) || "Team B",
+  };
+
   const results = Array.isArray(candidate.results)
     ? candidate.results
         .map((result) => {
@@ -279,10 +386,12 @@ function normalizeSession(candidate) {
           const position = Number(result.position);
           const points = Number(result.points);
           if (!player || !Number.isInteger(position) || position < 1 || position > 5) return null;
+          const team = mode === "teams" && (result.team === "A" || result.team === "B") ? result.team : null;
           return {
             player: player.slice(0, 80),
             position,
             points: Number.isFinite(points) && points >= 0 ? roundScore(points) : 0,
+            team,
           };
         })
         .filter(Boolean)
@@ -293,6 +402,8 @@ function normalizeSession(candidate) {
     id: String(candidate.id || makeId()),
     date,
     game: game.slice(0, 100),
+    mode,
+    teams,
     notes: String(candidate.notes || "").trim().slice(0, 500),
     results,
   };
@@ -340,6 +451,7 @@ function saveState() {
     console.warn("Could not save tracker data", error);
     dom.storageStatus.textContent = "Storage unavailable — export a backup before leaving";
   }
+  pushToRemote();
 }
 
 function updateStorageStatus() {
@@ -356,8 +468,11 @@ function updateStorageStatus() {
 function renderDashboard() {
   const standings = calculateStandings();
   renderLeaderboard(standings);
+  renderTeamStandings();
   renderPerGameStandings();
+  populateHistoryFilters();
   renderHistory();
+  renderStats();
 }
 
 function calculateStandings() {
@@ -589,12 +704,17 @@ function renderPerGameStandings() {
 
 function renderHistory() {
   dom.historyList.replaceChildren();
+  const sessions = filteredSessions();
   if (!state.sessions.length) {
-    dom.historyList.appendChild(make("div", "empty-state", "No sessions recorded yet. Log the first game above and it'll appear here."));
+    dom.historyList.appendChild(make("div", "empty-state", "No sessions recorded yet. Log the first game and it'll appear here."));
+    return;
+  }
+  if (!sessions.length) {
+    dom.historyList.appendChild(make("div", "empty-state", "Nothing matches those filters. Loosen them and the stones reappear."));
     return;
   }
 
-  for (const session of [...state.sessions].sort(compareSessions).reverse()) {
+  for (const session of sessions) {
     const item = make("article", "history-item");
     const card = make("div", "history-card");
     const top = make("div", "history-card-top");
@@ -608,13 +728,19 @@ function renderHistory() {
       const winnerLine = make("div", "history-winner");
       winnerLine.appendChild(make("span", "winner-label", "👑"));
       winnerLine.appendChild(make("span", "", `${winner.player} takes the win`));
+      if (session.mode === "teams" && winner.team) {
+        winnerLine.appendChild(make("span", `team-chip ${winner.team === "A" ? "is-a" : "is-b"}`, teamLabel(session, winner.team)));
+      }
       winnerLine.appendChild(make("span", "winner-points", `${winner.points} pts`));
       card.appendChild(winnerLine);
     }
 
     const results = make("div", "history-results");
     for (const result of sortedResults) {
-      const resultChip = make("span", `history-result${result.position === 1 ? " winner" : ""}`, `${POSITION_META[result.position - 1]?.emoji || `#${result.position}`} ${result.player} · ${result.points}pts`);
+      const label = session.mode === "teams" && result.team
+        ? `${POSITION_META[result.position - 1]?.emoji || `#${result.position}`} ${result.player} · ${teamLabel(session, result.team)} · ${result.points}pts`
+        : `${POSITION_META[result.position - 1]?.emoji || `#${result.position}`} ${result.player} · ${result.points}pts`;
+      const resultChip = make("span", `history-result${result.position === 1 ? " winner" : ""}`, label);
       resultChip.style.borderColor = `${getPlayer(result.player).color}66`;
       results.appendChild(resultChip);
     }
@@ -626,13 +752,256 @@ function renderHistory() {
     const edit = make("button", "edit-button", "Edit");
     edit.type = "button";
     edit.dataset.editSessionId = session.id;
-    const remove = make("button", "delete-button", "Remove session");
+    const armed = armedDeleteId === session.id;
+    const remove = make("button", `delete-button${armed ? " is-armed" : ""}`, armed ? "Tap again to confirm" : "Remove session");
     remove.type = "button";
     remove.dataset.sessionId = session.id;
     actions.append(edit, remove);
     card.appendChild(actions);
     item.appendChild(card);
     dom.historyList.appendChild(item);
+  }
+}
+
+function teamLabel(session, side) {
+  if (!session || !session.teams) return side === "A" ? "Team A" : "Team B";
+  return side === "A" ? session.teams.A : session.teams.B;
+}
+
+function filteredSessions() {
+  const ordered = [...state.sessions].sort(compareSessions).reverse();
+  return ordered.filter((session) => {
+    if (filters.game && session.game !== filters.game) return false;
+    if (filters.player && !session.results.some((r) => r.player === filters.player)) return false;
+    if (filters.q) {
+      const hay = `${session.game} ${session.notes} ${session.results.map((r) => r.player).join(" ")}`.toLowerCase();
+      if (!hay.includes(filters.q)) return false;
+    }
+    return true;
+  });
+}
+
+function populateHistoryFilters() {
+  const games = [...new Set(state.sessions.map((s) => s.game))].sort((a, b) => a.localeCompare(b));
+  const keepGame = filters.game;
+  dom.historyGameFilter.replaceChildren();
+  dom.historyGameFilter.appendChild(createOption("", "All games"));
+  for (const game of games) dom.historyGameFilter.appendChild(createOption(game, `${getGameEmoji(game)} ${game}`));
+  dom.historyGameFilter.value = games.includes(keepGame) ? keepGame : "";
+  filters.game = dom.historyGameFilter.value;
+
+  const keepPlayer = filters.player;
+  dom.historyPlayerFilter.replaceChildren();
+  dom.historyPlayerFilter.appendChild(createOption("", "Everyone"));
+  for (const player of state.players) dom.historyPlayerFilter.appendChild(createOption(player.name, `${player.emoji} ${player.name}`));
+  dom.historyPlayerFilter.value = state.players.some((p) => p.name === keepPlayer) ? keepPlayer : "";
+  filters.player = dom.historyPlayerFilter.value;
+}
+
+function renderTeamStandings() {
+  if (!dom.teamRows) return;
+  dom.teamRows.replaceChildren();
+  const totals = new Map();
+  for (const session of state.sessions) {
+    if (session.mode !== "teams") continue;
+    for (const result of session.results) {
+      if (!result.team) continue;
+      const key = `${result.team}|||${teamLabel(session, result.team)}`;
+      if (!totals.has(key)) totals.set(key, { name: teamLabel(session, result.team), side: result.team, points: 0, plays: 0, wins: 0 });
+      const t = totals.get(key);
+      t.points += result.points;
+      t.plays += 1;
+      if (result.position === 1) t.wins += 1;
+    }
+  }
+  const ranked = [...totals.values()]
+    .map((t) => ({ ...t, points: roundScore(t.points) }))
+    .sort((a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name));
+  dom.teamBlock.hidden = !ranked.length;
+  if (!ranked.length) return;
+  const maxPoints = ranked[0].points || 1;
+  ranked.forEach((team, index) => {
+    const row = make("article", "roll-row");
+    row.appendChild(make("span", "roll-rank", String(index + 1)));
+    row.appendChild(make("span", `team-chip ${team.side === "A" ? "is-a" : "is-b"}`, team.name));
+    const copy = make("div", "roll-copy");
+    const chips = make("div", "roll-chips");
+    chips.appendChild(make("span", "roll-chip", `${team.plays} play${team.plays === 1 ? "" : "s"}`));
+    chips.appendChild(make("span", "roll-chip is-wins", `🏆 ${team.wins}`));
+    copy.appendChild(chips);
+    const bar = make("div", "roll-bar");
+    const fill = make("span", "roll-bar-fill");
+    fill.style.width = `${Math.max(0, Math.min(100, (team.points / maxPoints) * 100))}%`;
+    bar.appendChild(fill);
+    copy.appendChild(bar);
+    row.append(copy, make("strong", "roll-total", trimNumber(team.points)));
+    dom.teamRows.appendChild(row);
+  });
+}
+
+/* ═══════════════════════════════ STATS ═══════════════════════════════ */
+
+function sessionsNewestFirst() {
+  return [...state.sessions].sort(compareSessions).reverse();
+}
+
+function calculateStreaks() {
+  return state.players.map((player) => {
+    const lastFive = [];
+    for (const session of sessionsNewestFirst()) {
+      const result = session.results.find((r) => r.player === player.name);
+      if (!result) continue;
+      if (lastFive.length < 5) lastFive.push(result.position);
+      else break;
+    }
+    // Current win streak: consecutive wins counting back from the latest play.
+    let streak = 0;
+    for (const session of sessionsNewestFirst()) {
+      const result = session.results.find((r) => r.player === player.name);
+      if (!result) continue;
+      if (result.position === 1) streak += 1;
+      else break;
+    }
+    return { name: player.name, streak, lastFive };
+  });
+}
+
+function calculateHeadToHead() {
+  const names = state.players.map((p) => p.name);
+  const matrix = {};
+  for (const a of names) {
+    matrix[a] = {};
+    for (const b of names) matrix[a][b] = 0;
+  }
+  for (const session of state.sessions) {
+    const present = session.results.filter((r) => names.includes(r.player));
+    for (let i = 0; i < present.length; i++) {
+      for (let j = 0; j < present.length; j++) {
+        if (i === j) continue;
+        if (present[i].position < present[j].position) matrix[present[i].player][present[j].player] += 1;
+      }
+    }
+  }
+  return { names, matrix };
+}
+
+function perGameBest() {
+  const best = new Map();
+  for (const session of state.sessions) {
+    const key = session.game.toLowerCase();
+    if (!best.has(key)) best.set(key, { game: session.game, points: -1, holder: "", date: "" });
+    const entry = best.get(key);
+    for (const result of session.results) {
+      if (result.points > entry.points) {
+        entry.points = result.points;
+        entry.holder = result.player;
+        entry.date = session.date;
+      }
+    }
+  }
+  return [...best.values()].sort((a, b) => a.game.localeCompare(b.game));
+}
+
+function renderStats() {
+  if (!dom.bestGrid) return;
+  const bests = perGameBest();
+  dom.bestGrid.replaceChildren();
+  if (!bests.length) {
+    dom.bestGrid.appendChild(make("div", "empty-state", "No records yet — the tower remembers everything from here on."));
+  }
+  for (const best of bests) {
+    const card = make("article", "game-card");
+    const heading = make("div", "game-card-heading");
+    heading.appendChild(make("span", "game-card-emoji", getGameEmoji(best.game)));
+    heading.appendChild(make("h3", "", best.game));
+    card.appendChild(heading);
+    const line = make("div", "best-line");
+    line.appendChild(make("span", "", `${best.holder} · ${formatDate(best.date)}`));
+    line.appendChild(make("strong", "", `${trimNumber(best.points)} pts`));
+    card.appendChild(line);
+    dom.bestGrid.appendChild(card);
+  }
+
+  const streaks = calculateStreaks();
+  dom.streakRows.replaceChildren();
+  const maxStreak = Math.max(1, ...streaks.map((s) => s.streak));
+  streaks
+    .sort((a, b) => b.streak - a.streak || a.name.localeCompare(b.name))
+    .forEach((row, index) => {
+      const el = make("article", "roll-row");
+      el.style.setProperty("--player-color", getPlayer(row.name).color);
+      el.appendChild(make("span", "roll-rank", String(index + 1)));
+      el.appendChild(make("span", "roll-avatar", getPlayer(row.name).emoji));
+      const copy = make("div", "roll-copy");
+      const nameLine = make("div", "roll-name-line");
+      nameLine.appendChild(make("span", "roll-name", row.name));
+      const dots = make("span", "streak-dots");
+      for (const pos of row.lastFive) {
+        dots.appendChild(make("span", `streak-dot${pos === 1 ? " is-win" : pos <= 3 ? " is-podium" : ""}`));
+      }
+      nameLine.appendChild(dots);
+      copy.appendChild(nameLine);
+      const chips = make("div", "roll-chips");
+      chips.appendChild(make("span", `roll-chip${row.streak ? " is-wins" : ""}`,
+        row.streak ? `🔥 ${row.streak}-win streak` : "no streak"));
+      copy.appendChild(chips);
+      const bar = make("div", "roll-bar");
+      const fill = make("span", "roll-bar-fill");
+      fill.style.width = `${Math.max(row.streak ? 8 : 0, Math.min(100, (row.streak / maxStreak) * 100))}%`;
+      bar.appendChild(fill);
+      copy.appendChild(bar);
+      el.append(copy, make("strong", "roll-total", row.streak ? `×${row.streak}` : "—"));
+      dom.streakRows.appendChild(el);
+    });
+
+  const { names, matrix } = calculateHeadToHead();
+  dom.h2hTable.replaceChildren();
+  const head = make("tr", "");
+  head.appendChild(make("th", "", "↓ beat →"));
+  for (const name of names) head.appendChild(make("th", "", name));
+  dom.h2hTable.appendChild(head);
+  for (const a of names) {
+    const tr = make("tr", "");
+    tr.appendChild(make("th", "", a));
+    let bestCount = 0;
+    for (const b of names) {
+      if (a !== b && matrix[a][b] > bestCount) bestCount = matrix[a][b];
+    }
+    for (const b of names) {
+      const val = a === b ? "—" : String(matrix[a][b]);
+      const td = make("td", a !== b && matrix[a][b] === bestCount && bestCount > 0 ? "is-best" : "", val);
+      tr.appendChild(td);
+    }
+    dom.h2hTable.appendChild(tr);
+  }
+
+  dom.formChart.replaceChildren();
+  const standings = calculateStandings();
+  const top = standings.slice(0, 5);
+  for (const standing of top) {
+    const plays = sessionsNewestFirst()
+      .filter((s) => s.results.some((r) => r.player === standing.name))
+      .slice(0, 10)
+      .reverse();
+    const el = make("article", "roll-row");
+    el.style.setProperty("--player-color", getPlayer(standing.name).color);
+    el.appendChild(make("span", "roll-avatar", getPlayer(standing.name).emoji));
+    const copy = make("div", "roll-copy");
+    copy.appendChild(make("span", "roll-name", standing.name));
+    const spark = make("div", "spark");
+    const maxPts = Math.max(1, ...plays.map((s) => s.results.find((r) => r.player === standing.name).points));
+    for (const session of plays) {
+      const result = session.results.find((r) => r.player === standing.name);
+      const bar = make("span", `spark-bar${result.position === 1 ? " is-win" : ""}`);
+      bar.style.height = `${Math.max(8, Math.round((result.points / maxPts) * 100))}%`;
+      bar.setAttribute("aria-label", `${session.game}: ${result.points} pts`);
+      spark.appendChild(bar);
+    }
+    if (!plays.length) spark.appendChild(make("span", "roll-chip", "no plays yet"));
+    copy.appendChild(spark);
+    el.appendChild(copy);
+    el.appendChild(make("strong", "roll-total", trimNumber(standing.points)));
+    dom.formChart.appendChild(el);
   }
 }
 
@@ -865,8 +1234,22 @@ function resetForm(options) {
   // result made the form look like a finished entry and all but invited
   // duplicate logging — "repeat last" is now an explicit button instead.
   aimedPosition = null;
+  if (draft && draft.mode) {
+    formMode = draft.mode;
+    if (draft.teams) {
+      dom.teamAName.value = draft.teams.A;
+      dom.teamBName.value = draft.teams.B;
+    }
+  } else if (!draft && !editing) {
+    formMode = "solo";
+  }
   if (!draft) {
     prefillBoard(editing ? editing.results : []);
+    if (editing) {
+      formMode = editing.mode === "teams" ? "teams" : "solo";
+      dom.teamAName.value = editing.teams.A;
+      dom.teamBName.value = editing.teams.B;
+    }
   }
   renderBoard();
 }
@@ -875,7 +1258,12 @@ function prefillBoard(results) {
   formRows = POSITION_META.map((meta) => {
     const match = results.find((r) => r.position === meta.position);
     const points = match && Number.isFinite(match.points) ? match.points : state.scoring[meta.position];
-    return { position: meta.position, player: match ? match.player : "", points };
+    return {
+      position: meta.position,
+      player: match ? match.player : "",
+      points,
+      team: match && (match.team === "A" || match.team === "B") ? match.team : null,
+    };
   });
 }
 
@@ -889,6 +1277,8 @@ function readFormDraft() {
     newGameName,
     date: dom.gameDate.value,
     notes: dom.notesInput.value,
+    mode: formMode,
+    teams: teamNames(),
     results,
   };
 }
@@ -918,6 +1308,13 @@ function populateGameSelect(selectedGame) {
 function renderBoard() {
   dom.stoneList.replaceChildren();
   const players = state.players.slice(0, 5);
+  const names = teamNames();
+
+  dom.modeSoloButton.classList.toggle("is-primary", formMode === "solo");
+  dom.modeTeamsButton.classList.toggle("is-primary", formMode === "teams");
+  dom.modeSoloButton.setAttribute("aria-pressed", formMode === "solo" ? "true" : "false");
+  dom.modeTeamsButton.setAttribute("aria-pressed", formMode === "teams" ? "true" : "false");
+  dom.teamNames.hidden = formMode !== "teams";
 
   for (const meta of POSITION_META) {
     const row = formRows.find((r) => r.position === meta.position) || {
@@ -1006,6 +1403,22 @@ function renderBoard() {
 
     points.append(minus, input, plus);
     li.appendChild(points);
+
+    // Team switch on a filled stone (team games only).
+    if (formMode === "teams" && player) {
+      const teams = make("div", "stone-teams");
+      for (const side of ["A", "B"]) {
+        const btn = make("button", `stone-team-btn${row.team === side ? (side === "A" ? " is-on-a" : " is-on-b") : ""}`, side === "A" ? names.A : names.B);
+        btn.type = "button";
+        btn.dataset.teamPos = String(meta.position);
+        btn.dataset.team = side;
+        btn.setAttribute("aria-pressed", row.team === side ? "true" : "false");
+        btn.setAttribute("aria-label", `Put ${player.name} in ${side === "A" ? names.A : names.B}`);
+        teams.appendChild(btn);
+      }
+      li.appendChild(teams);
+    }
+
     dom.stoneList.appendChild(li);
   }
 
@@ -1068,6 +1481,15 @@ function handlePoolClick(event) {
 }
 
 function handleStoneClick(event) {
+  const teamBtn = event.target.closest("[data-team-pos]");
+  if (teamBtn) {
+    const target = formRows.find((r) => r.position === Number(teamBtn.dataset.teamPos));
+    if (!target) return;
+    target.team = target.team === teamBtn.dataset.team ? null : teamBtn.dataset.team;
+    renderBoard();
+    return;
+  }
+
   const step = event.target.closest("[data-step]");
   if (step) {
     const position = Number(step.dataset.step);
@@ -1154,6 +1576,7 @@ function removePlayer(position) {
   if (!target || !target.player) return;
   const name = target.player;
   target.player = "";
+  target.team = null;
   target.points = state.scoring[position];
   if (aimedPosition === position) aimedPosition = null;
   renderBoard();
@@ -1227,7 +1650,29 @@ function cssEscape(value) {
 }
 
 function readFormRows() {
-  return formRows.map((row) => ({ position: row.position, player: row.player, points: row.points }));
+  return formRows.map((row) => ({
+    position: row.position,
+    player: row.player,
+    points: row.points,
+    team: row.team === "A" || row.team === "B" ? row.team : null,
+  }));
+}
+
+function setFormMode(mode) {
+  formMode = mode === "teams" ? "teams" : "solo";
+  renderBoard();
+  showToast(formMode === "teams" ? "Team game — assign each player to a team." : "Solo game.");
+}
+
+function syncTeamNames() {
+  renderBoard();
+}
+
+function teamNames() {
+  return {
+    A: (dom.teamAName.value.trim() || "Team A").slice(0, 24),
+    B: (dom.teamBName.value.trim() || "Team B").slice(0, 24),
+  };
 }
 
 function handleGameSelectChange() {
@@ -1263,6 +1708,19 @@ function handleGameSubmit(event) {
     return;
   }
 
+  const names = teamNames();
+  if (formMode === "teams") {
+    const unassigned = rows.filter((row) => row.team !== "A" && row.team !== "B");
+    if (unassigned.length) {
+      setFormMessage(`Give every placed player a team — ${unassigned.length} still need ${names.A} or ${names.B}.`, "error");
+      return;
+    }
+    if (names.A.toLowerCase() === names.B.toLowerCase()) {
+      setFormMessage("Give the two teams different names.", "error");
+      return;
+    }
+  }
+
   for (const row of rows) {
     if (!Number.isFinite(row.points) || row.points < 0) {
       setFormMessage(`Points for ${POSITION_META[row.position - 1].label} must be zero or more.`, "error");
@@ -1295,11 +1753,14 @@ function handleGameSubmit(event) {
     id: editingSessionId || makeId(),
     date,
     game,
+    mode: formMode,
+    teams: formMode === "teams" ? names : { A: "Team A", B: "Team B" },
     notes: dom.notesInput.value.trim(),
     results: rows.map((row) => ({
       player: row.player,
       position: row.position,
       points: roundScore(row.points),
+      team: formMode === "teams" ? row.team : null,
     })),
   };
 
@@ -1318,6 +1779,7 @@ function handleGameSubmit(event) {
   dom.logButton.textContent = "Log Session";
 
   saveState();
+  pushToRemote();
   renderDashboard();
   renderGameEmojiList();
   resetForm();
@@ -1343,14 +1805,29 @@ function handleHistoryClick(event) {
   }
   const button = event.target.closest("[data-session-id]");
   if (!button) return;
-  const session = state.sessions.find((item) => item.id === button.dataset.sessionId);
+  const sessionId = button.dataset.sessionId;
+  const session = state.sessions.find((item) => item.id === sessionId);
   if (!session) return;
-  const confirmed = window.confirm(`Remove the ${session.game} session from ${formatDate(session.date)}?`);
-  if (!confirmed) return;
+
+  // Two taps to remove: the first arms, the second confirms. The arm expires.
+  if (armedDeleteId !== sessionId) {
+    window.clearTimeout(armedDeleteTimer);
+    armedDeleteId = sessionId;
+    renderHistory();
+    showToast("Tap remove again to confirm — nothing is gone yet.");
+    armedDeleteTimer = window.setTimeout(() => {
+      armedDeleteId = null;
+      renderHistory();
+    }, 6000);
+    return;
+  }
+  window.clearTimeout(armedDeleteTimer);
+  armedDeleteId = null;
   if (editingSessionId === session.id) cancelEdit();
   snapshotForUndo();
   state.sessions = state.sessions.filter((item) => item.id !== session.id);
   saveState();
+  pushToRemote();
   renderDashboard();
   resetForm();
   showToast("Session removed.", { undo: true });
@@ -1370,11 +1847,14 @@ function startEditing(sessionId) {
   dom.notesInput.value = session.notes || "";
   dom.newGameInput.hidden = true;
   dom.newGameInput.value = "";
+  formMode = session.mode === "teams" ? "teams" : "solo";
+  dom.teamAName.value = session.teams.A;
+  dom.teamBName.value = session.teams.B;
   prefillBoard(session.results);
   renderBoard();
   clearFormMessage();
 
-  dom.logSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  switchTab("log");
   dom.gameSelect.focus();
   showToast("Loaded session into the form. Save to apply, or cancel.");
 }
@@ -1446,19 +1926,38 @@ function handleImportFile(event) {
 }
 
 function clearAllData() {
-  if (!window.confirm("Clear all logged games from this browser? Export a backup first if you want to keep them.")) return;
+  // Two taps as well — and the toast afterwards still offers an undo.
+  if (!armedClearAll) {
+    armedClearAll = true;
+    dom.clearDataButton.classList.add("is-armed");
+    dom.clearDataButton.textContent = "Tap again to clear everything";
+    renderDataSettingsMessage("This removes every logged game. Tap again within 8 seconds to go through with it.", "error");
+    window.clearTimeout(armedClearTimer);
+    armedClearTimer = window.setTimeout(() => {
+      armedClearAll = false;
+      dom.clearDataButton.classList.remove("is-armed");
+      dom.clearDataButton.textContent = "Clear All Games";
+    }, 8000);
+    return;
+  }
+  window.clearTimeout(armedClearTimer);
+  armedClearAll = false;
+  dom.clearDataButton.classList.remove("is-armed");
+  dom.clearDataButton.textContent = "Clear All Games";
+  snapshotForUndo();
   state = createEmptyState();
   editingSessionId = null;
   dom.editBanner.hidden = true;
   dom.logButton.textContent = "Log Session";
   saveState();
+  pushToRemote();
   renderDashboard();
   renderScoringInputs();
   renderRoster();
   renderGameEmojiList();
   resetForm();
   renderDataSettingsMessage("All logged games cleared.");
-  showToast("All logged games cleared.");
+  showToast("All logged games cleared.", { undo: true });
 }
 
 function resetScoring() {
@@ -1523,6 +2022,211 @@ function showToast(message, options) {
   dom.toast.classList.toggle("has-undo", undoable);
   dom.toast.classList.add("visible");
   toastTimer = window.setTimeout(() => dom.toast.classList.remove("visible"), undoable ? 6500 : 2800);
+}
+
+/* ═══════════════════════════════ SHARED BOARD (Supabase) ═══════════════════════════════
+   Browsers can't talk to each other, so live sync needs one shared database.
+   This adapter speaks to a free Supabase project (plain REST — no library needed):
+
+     tower_meta     one row, id = 1: { players, scoring, gameEmoji, updated_at }
+     tower_sessions one row per session: { id, date, game, mode, teams, notes, results, updated_at }
+
+   Keys live in per-device localStorage (never in exports). Last writer wins per
+   row by updated_at. When disconnected everything works exactly as before.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const REMOTE_KEY = "tower-remote-v1";
+let remote = null;
+let remoteTimer = 0;
+let pushTimer = 0;
+let lastPullAt = 0;
+
+function loadRemoteCreds() {
+  try {
+    const raw = window.localStorage.getItem(REMOTE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.url && parsed.key) return parsed;
+  } catch (error) {
+    console.warn("Could not read remote credentials", error);
+  }
+  return null;
+}
+
+function initSync() {
+  remote = loadRemoteCreds();
+  if (dom.sbUrl && remote) dom.sbUrl.value = remote.url;
+  if (dom.sbKey && remote) dom.sbKey.value = remote.key;
+  if (remote) {
+    setSyncMessage("Connected — pulling the shared board…");
+    pullFromRemote(true);
+    schedulePoll();
+  } else {
+    setSyncMessage("");
+    updateSyncStatus();
+  }
+  window.addEventListener("online", () => {
+    if (remote) pullFromRemote(true);
+  });
+}
+
+function setSyncMessage(message, type) {
+  if (!dom.syncMessage) return;
+  dom.syncMessage.textContent = message;
+  dom.syncMessage.style.color = type === "error" ? "var(--danger)" : "var(--success)";
+}
+
+function updateSyncStatus() {
+  if (dom.syncStatus) {
+    dom.syncStatus.textContent = remote
+      ? "Five souls, one crown · shared live board"
+      : "Five souls, one crown · saved in this browser";
+  }
+  if (dom.storageStatus) {
+    dom.storageStatus.textContent = remote
+      ? `Shared board live${lastPullAt ? ` · synced ${new Date(lastPullAt).toLocaleTimeString()}` : ""}`
+      : "Saved locally in this browser";
+  }
+}
+
+function sbHeaders(key) {
+  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+}
+
+function connectSync() {
+  const url = dom.sbUrl.value.trim().replace(/\/+$/, "");
+  const key = dom.sbKey.value.trim();
+  if (!/^https:\/\/.+\.supabase\.co$/.test(url)) {
+    setSyncMessage("That URL doesn't look like a Supabase project (https://xyz.supabase.co).", "error");
+    return;
+  }
+  if (key.length < 20) {
+    setSyncMessage("Paste the anon key from your Supabase dashboard.", "error");
+    return;
+  }
+  remote = { url, key };
+  try {
+    window.localStorage.setItem(REMOTE_KEY, JSON.stringify(remote));
+  } catch (error) {
+    setSyncMessage("Could not save credentials in this browser.", "error");
+    return;
+  }
+  setSyncMessage("Connected — pulling the shared board…");
+  updateSyncStatus();
+  pullFromRemote(true);
+  schedulePoll();
+}
+
+function disconnectSync() {
+  remote = null;
+  window.clearTimeout(remoteTimer);
+  window.clearTimeout(pushTimer);
+  try {
+    window.localStorage.removeItem(REMOTE_KEY);
+  } catch (error) {
+    console.warn("Could not clear remote credentials", error);
+  }
+  setSyncMessage("Disconnected — back to this browser only.");
+  updateSyncStatus();
+}
+
+function schedulePoll() {
+  window.clearTimeout(remoteTimer);
+  if (!remote) return;
+  remoteTimer = window.setTimeout(async () => {
+    await pullFromRemote(false);
+    schedulePoll();
+  }, 15000);
+}
+
+/* Debounced: roster typing saves constantly, the network shouldn't. */
+function pushToRemote() {
+  if (!remote) return;
+  window.clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(() => pushNow(), 2000);
+}
+
+async function pushNow() {
+  if (!remote) return;
+  try {
+    const stamp = new Date().toISOString();
+    await fetch(`${remote.url}/rest/v1/tower_meta`, {
+      method: "POST",
+      headers: { ...sbHeaders(remote.key), Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify({
+        id: 1,
+        players: state.players,
+        scoring: state.scoring,
+        gameEmoji: state.gameEmoji,
+        updated_at: stamp,
+      }),
+    });
+    for (const session of state.sessions) {
+      await fetch(`${remote.url}/rest/v1/tower_sessions`, {
+        method: "POST",
+        headers: { ...sbHeaders(remote.key), Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ ...session, updated_at: stamp }),
+      });
+    }
+    setSyncMessage(`Pushed ${state.sessions.length} sessions to the shared board.`);
+  } catch (error) {
+    console.warn("Push failed", error);
+    setSyncMessage("Push failed — check your connection. Your games are still safe here.", "error");
+  }
+}
+
+async function pushToRemoteNow() {
+  window.clearTimeout(pushTimer);
+  await pushNow();
+}
+
+async function pullFromRemote(announce) {
+  if (!remote) return;
+  try {
+    const metaRes = await fetch(`${remote.url}/rest/v1/tower_meta?id=eq.1&select=*`, {
+      headers: sbHeaders(remote.key),
+    });
+    const metaRows = await metaRes.json();
+    const sessionsRes = await fetch(`${remote.url}/rest/v1/tower_sessions?select=*&order=date.asc`, {
+      headers: sbHeaders(remote.key),
+    });
+    const sessionRows = await sessionsRes.json();
+    if (!Array.isArray(sessionRows)) throw new Error("Unexpected response from the shared board.");
+
+    const merged = normalizeState({
+      players: metaRows && metaRows[0] ? metaRows[0].players : state.players,
+      scoring: metaRows && metaRows[0] ? metaRows[0].scoring : state.scoring,
+      gameEmoji: metaRows && metaRows[0] ? metaRows[0].gameEmoji : state.gameEmoji,
+      sessions: sessionRows,
+    });
+    // Don't clobber an in-progress edit with a background pull.
+    const localDraft = readFormDraft();
+    state = merged;
+    lastPullAt = Date.now();
+    saveStateLocalOnly();
+    renderDashboard();
+    renderScoringInputs();
+    renderRoster();
+    renderGameEmojiList();
+    resetForm(localDraft ? { draft: localDraft } : undefined);
+    updateSyncStatus();
+    if (announce) {
+      setSyncMessage(`Shared board live — ${state.sessions.length} sessions.`);
+      showToast("Shared board synced.");
+    }
+  } catch (error) {
+    console.warn("Pull failed", error);
+    if (announce) setSyncMessage("Could not reach the shared board — still showing this device.", "error");
+  }
+}
+
+/* saveState() pushes; the pull path must write without pushing back. */
+function saveStateLocalOnly() {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("Could not save tracker data", error);
+  }
 }
 
 /* ═══════════════════════════════ UNDO ═══════════════════════════════ */

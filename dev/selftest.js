@@ -314,5 +314,71 @@ if (!FATAL) {
 
   var toastsIntact = document.querySelector("#undoButton") !== null;
   assert(toastsIntact, "undo button survives being written to (toast structure intact)");
+
+  /* ═════ TABS ═════ */
+  switchTab("log");
+  assert(activeTab === "log", "switchTab(log) activates the log tab");
+  assert(document.querySelector("#logSection").hidden === false, "log panel visible on its tab");
+  switchTab("tower");
+  assert(activeTab === "tower", "switchTab(tower) returns to the tower");
+
+  /* ═════ TEAMS ═════ */
+  setFormMode("teams");
+  assert(formMode === "teams", "team mode arms");
+  assert(document.querySelector("#teamNames").hidden === false, "team name fields appear in team mode");
+  clearBoard();
+  fillEveryonePlayed();
+  var teamCount = 0;
+  for (var ti = 0; ti < formRows.length; ti++) {
+    if (formRows[ti].player) { formRows[ti].team = (ti % 2 === 0) ? "A" : "B"; teamCount++; }
+  }
+  assert(teamCount === 5, "all five placed players take a team (got " + teamCount + ")");
+  document.querySelector("#gameSelect").value = "Monopoly Duel";
+  document.querySelector("#gameDate").value = "2025-10-02";
+  document.querySelector("#teamAName").value = "Alpha";
+  document.querySelector("#teamBName").value = "Beta";
+  document.querySelector("#formMessage").textContent = "";
+  var teamBefore = state.sessions.length;
+  handleGameSubmit({ preventDefault: function () {} });
+  assert(state.sessions.length === teamBefore + 1, "team session logged (sessions=" + state.sessions.length + ")");
+  var lastTeam = state.sessions[state.sessions.length - 1];
+  assert(lastTeam.mode === "teams" && lastTeam.results.every(function (r) { return r.team === "A" || r.team === "B"; }),
+    "team session stores sides on every result");
+  assert(document.querySelector("#teamBlock").hidden === false, "team honours appear once a team game exists");
+  var normTeam = normalizeState(JSON.parse(JSON.stringify(state)));
+  assert(normTeam.sessions[normTeam.sessions.length - 1].mode === "teams",
+    "export/import round trip preserves team mode");
+  setFormMode("solo");
+
+  /* ═════ TWO-TAP DELETE ═════ */
+  var doomed = state.sessions[state.sessions.length - 1];
+  var countBeforeDelete = state.sessions.length;
+  handleHistoryClick({ target: (function () {
+    var b = document.querySelector("#historyList").querySelector("[data-session-id=\"" + doomed.id + "\"]");
+    return b;
+  })() });
+  assert(state.sessions.length === countBeforeDelete && armedDeleteId === doomed.id,
+    "first tap arms the delete instead of removing");
+  renderHistory();
+  handleHistoryClick({ target: document.querySelector("#historyList").querySelector("[data-session-id=\"" + doomed.id + "\"]") });
+  assert(state.sessions.length === countBeforeDelete - 1,
+    "second tap confirms the remove (" + state.sessions.length + ")");
+
+  /* ═════ FILTERS + STATS ═════ */
+  populateHistoryFilters();
+  assert(document.querySelector("#historyGameFilter").children.length > 1, "game filter lists games");
+  filters.game = "";
+  filters.player = "";
+  filters.q = "zzzz-no-such-note";
+  renderHistory();
+  assert(document.querySelector("#historyList").children.length === 1, "a hopeless search shows one empty state");
+  filters.q = "";
+  renderHistory();
+  assert(document.querySelector("#historyList").children.length > 1, "clearing the search restores the chronicle");
+  renderStats();
+  assert(document.querySelector("#bestGrid").children.length > 0, "best-per-game grid renders");
+  assert(document.querySelector("#streakRows").children.length === 5, "streak rows render for all five");
+  assert(document.querySelector("#h2hTable").children.length === 6, "head-to-head renders header plus five rows");
+  assert(document.querySelector("#formRows").children.length > 0, "points-over-time chart renders");
 }
 __log.join("\n")
