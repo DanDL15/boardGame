@@ -1,54 +1,57 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    THE TOWER — a board game scoreboard
-   Theme: a candle-lit medieval tower. Stone, iron, gold leaf, and banners.
+   Theme: sunset over the tower. Storm slate, sunlit stone, ember gold, ivy.
+   Sampled from the flat's tower painting: slate storm clouds, low amber sun,
+   warm lit stone, green ivy, lake mist.
+   Background photo lives at assets/tower-bg.jpg (not committed — add your own).
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
   color-scheme: dark;
 
-  /* ── Stone & night ── */
-  --night: #0b0a09;
-  --stone-900: #12100e;
-  --stone-800: #1a1714;
-  --stone-700: #232019;
-  --stone-600: #2e2a22;
-  --stone-500: #3b362c;
-  --iron: #6b6455;
-  --iron-light: #8d8574;
+  /* ── Storm slate & night (the clouds) ── */
+  --night: #10151d;
+  --stone-900: #161d27;
+  --stone-800: #1e2733;
+  --stone-700: #283242;
+  --stone-600: #344054;
+  --stone-500: #46566e;
+  --iron: #7a8494;
+  --iron-light: #a3adc0;
 
-  /* ── Parchment (text) ── */
-  --parchment: #ece2cc;
-  --parchment-dim: #bdb29a;
-  --parchment-faint: #8a8071;
+  /* ── Mist (text — sunlit parchment) ── */
+  --parchment: #f3e9d6;
+  --parchment-dim: #cfc2ab;
+  --parchment-faint: #9a917f;
 
-  /* ── Gold leaf (the accent) ── */
-  --gold: #c9a227;
-  --gold-bright: #e8c86a;
-  --gold-pale: #f2e0b0;
-  --gold-deep: #7a5f1c;
+  /* ── Sunset gold (the low sun) ── */
+  --gold: #d9a441;
+  --gold-bright: #f2c979;
+  --gold-pale: #f9e6bd;
+  --gold-deep: #7a5416;
 
-  /* ── Heraldic ── */
-  --crimson: #a63b34;
-  --crimson-deep: #6e211d;
-  --forest: #4a7c59;
-  --royal: #4a5b9e;
+  /* ── Ember + ivy + lake ── */
+  --crimson: #c05a33;
+  --crimson-deep: #6e2f1d;
+  --forest: #6b7f52;
+  --royal: #5b6f8f;
 
-  --danger: #d4625c;
-  --success: #6faa7e;
+  --danger: #d4655a;
+  --success: #7fa06a;
 
-  --surface: rgba(35, 32, 25, 0.86);
-  --surface-solid: #1a1714;
-  --surface-raised: #262219;
-  --border: rgba(201, 162, 39, 0.16);
-  --border-strong: rgba(201, 162, 39, 0.32);
-  --border-stone: rgba(236, 226, 204, 0.09);
+  --surface: rgba(30, 39, 51, 0.86);
+  --surface-solid: #1e2733;
+  --surface-raised: #283242;
+  --border: rgba(217, 164, 65, 0.22);
+  --border-strong: rgba(217, 164, 65, 0.42);
+  --border-stone: rgba(243, 233, 214, 0.11);
 
   --shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
   --shadow-soft: 0 14px 38px rgba(0, 0, 0, 0.34);
-  --shadow-carved: inset 0 2px 0 rgba(236, 226, 204, 0.06), inset 0 -2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-carved: inset 0 2px 0 rgba(243, 233, 214, 0.06), inset 0 -2px 0 rgba(0, 0, 0, 0.5);
 
-  /* Candlelight from the top of the stairwell */
-  --torch: 201, 162, 39;
+  /* Low sun through the stairwell */
+  --torch: 217, 164, 65;
 
   --radius-xl: 26px;
   --radius-lg: 18px;
@@ -83,17 +86,23 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── The tower itself: masonry courses, a hearth glow, and a moon ── */
+/* ── The tower itself: photo, then legibility veils, then sunset glows ── */
 body::before {
   position: fixed;
   inset: 0;
   z-index: -2;
   content: "";
   background:
-    radial-gradient(ellipse 90% 55% at 50% -10%, rgba(201, 162, 39, 0.13), transparent 70%),
-    radial-gradient(ellipse 60% 40% at 12% 8%, rgba(166, 59, 52, 0.09), transparent 65%),
-    radial-gradient(ellipse 60% 40% at 90% 4%, rgba(74, 91, 158, 0.09), transparent 65%),
-    linear-gradient(180deg, #14110d 0%, var(--night) 55%, #070706 100%);
+    linear-gradient(180deg, rgba(16, 21, 29, 0.42) 0%, rgba(16, 21, 29, 0.68) 52%, rgba(10, 13, 18, 0.88) 100%),
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(217, 164, 65, 0.22), transparent 70%),
+    radial-gradient(ellipse 55% 38% at 10% 42%, rgba(217, 123, 63, 0.14), transparent 65%),
+    radial-gradient(ellipse 55% 40% at 92% 10%, rgba(91, 111, 143, 0.16), transparent 65%),
+    url("assets/tower-bg.jpg"),
+    linear-gradient(180deg, #1a2230 0%, var(--night) 55%, #0a0d12 100%);
+  background-size: cover, cover, cover, cover, cover, cover;
+  background-position: center 20%, center, center, center, center 20%, center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 /* Masonry: horizontal courses with staggered vertical joints */
@@ -105,11 +114,19 @@ body::after {
   content: "";
   opacity: 0.5;
   background-image:
-    linear-gradient(rgba(236, 226, 204, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(236, 226, 204, 0.022) 1px, transparent 1px);
+    linear-gradient(rgba(243, 233, 214, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(243, 233, 214, 0.022) 1px, transparent 1px);
   background-size: 100% var(--course), calc(var(--course) * 1.35) 100%;
   background-position: 0 0, calc(var(--course) * 0.675) 0;
   mask-image: linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.35) 60%, transparent 92%);
+}
+
+/* iOS ignores fixed attachment — the layer is already fixed, so just keep it covered */
+@media (max-width: 680px) {
+  body::before {
+    background-attachment: scroll;
+    background-position: center 12%, center, center, center, center 12%, center;
+  }
 }
 
 button,
@@ -205,7 +222,7 @@ ol {
   border-radius: 14px 14px 20px 20px;
   background:
     radial-gradient(circle at 50% 26%, rgba(var(--torch), 0.32), transparent 62%),
-    linear-gradient(160deg, rgba(201, 162, 39, 0.22), rgba(35, 32, 25, 0.92) 62%);
+    linear-gradient(160deg, rgba(217, 164, 65, 0.22), rgba(35, 32, 25, 0.92) 62%);
   box-shadow:
     inset 0 1px 0 rgba(242, 224, 176, 0.22),
     0 10px 26px rgba(0, 0, 0, 0.45),
@@ -280,7 +297,7 @@ ol {
 }
 
 .crest-nav a:hover {
-  background: rgba(201, 162, 39, 0.12);
+  background: rgba(217, 164, 65, 0.12);
   color: var(--gold-pale);
 }
 
@@ -311,26 +328,26 @@ ol {
 .button-primary {
   border-color: var(--gold);
   background: linear-gradient(165deg, var(--gold-bright), var(--gold) 55%, var(--gold-deep));
-  box-shadow: 0 8px 22px rgba(201, 162, 39, 0.24), inset 0 1px 0 rgba(255, 246, 214, 0.5);
+  box-shadow: 0 8px 22px rgba(217, 164, 65, 0.24), inset 0 1px 0 rgba(255, 246, 214, 0.5);
   color: #1a1408;
   font-weight: 700;
 }
 
 .button-primary:hover {
-  box-shadow: 0 12px 30px rgba(201, 162, 39, 0.36), inset 0 1px 0 rgba(255, 246, 214, 0.6);
+  box-shadow: 0 12px 30px rgba(217, 164, 65, 0.36), inset 0 1px 0 rgba(255, 246, 214, 0.6);
 }
 
 .button-secondary,
 .button-quiet {
   border-color: var(--border-stone);
-  background: rgba(236, 226, 204, 0.05);
+  background: rgba(243, 233, 214, 0.05);
   color: var(--parchment-dim);
 }
 
 .button-secondary:hover,
 .button-quiet:hover {
   border-color: var(--border-strong);
-  background: rgba(201, 162, 39, 0.1);
+  background: rgba(217, 164, 65, 0.1);
   color: var(--parchment);
 }
 
@@ -575,7 +592,7 @@ ol {
 .stone-card.stone-first {
   padding: 34px 18px 28px;
   border-color: var(--border-strong);
-  background: linear-gradient(180deg, rgba(201, 162, 39, 0.18), rgba(35, 32, 25, 0.95) 55%);
+  background: linear-gradient(180deg, rgba(217, 164, 65, 0.18), rgba(35, 32, 25, 0.95) 55%);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(242, 224, 176, 0.2);
 }
 
@@ -605,7 +622,7 @@ ol {
 
 .stone-first .stone-rank {
   border-color: var(--border-strong);
-  background: rgba(201, 162, 39, 0.18);
+  background: rgba(217, 164, 65, 0.18);
   color: var(--gold-pale);
 }
 
@@ -626,7 +643,7 @@ ol {
   width: 80px;
   height: 80px;
   border-color: var(--border-strong);
-  box-shadow: 0 0 0 5px rgba(201, 162, 39, 0.09), 0 10px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 5px rgba(217, 164, 65, 0.09), 0 10px 30px rgba(0, 0, 0, 0.4);
   font-size: 40px;
 }
 
@@ -652,7 +669,7 @@ ol {
 
 .stone-first .stone-points {
   font-size: 32px;
-  text-shadow: 0 2px 18px rgba(201, 162, 39, 0.4);
+  text-shadow: 0 2px 18px rgba(217, 164, 65, 0.4);
 }
 
 .stone-points-label {
@@ -762,7 +779,7 @@ ol {
 }
 
 .roll-chip.is-wins {
-  border-color: rgba(201, 162, 39, 0.3);
+  border-color: rgba(217, 164, 65, 0.3);
   color: var(--gold-bright);
 }
 
@@ -803,7 +820,7 @@ ol {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   padding: 11px 16px;
-  background: rgba(201, 162, 39, 0.1);
+  background: rgba(217, 164, 65, 0.1);
   color: var(--gold-pale);
   font-size: 12.5px;
   font-weight: 600;
@@ -888,7 +905,7 @@ ol {
 
 .field:focus {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.14);
+  box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.14);
   outline: none;
 }
 
@@ -960,7 +977,7 @@ select.field option {
 
 .chip-button:hover {
   border-color: var(--border-strong);
-  background: rgba(201, 162, 39, 0.12);
+  background: rgba(217, 164, 65, 0.12);
   color: var(--gold-pale);
   transform: translateY(-1px);
 }
@@ -970,8 +987,8 @@ select.field option {
 }
 
 .chip-button.is-primary {
-  border-color: rgba(201, 162, 39, 0.42);
-  background: rgba(201, 162, 39, 0.14);
+  border-color: rgba(217, 164, 65, 0.42);
+  background: rgba(217, 164, 65, 0.14);
   color: var(--gold-pale);
 }
 
@@ -1000,24 +1017,24 @@ select.field option {
 
 .stone-row.is-first.is-filled {
   border-color: var(--border-strong);
-  box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(217, 164, 65, 0.12);
 }
 
 /* Aimed: this is where the next player you tap will land */
 .stone-row.is-aimed {
   border-color: var(--gold);
-  background: rgba(201, 162, 39, 0.1);
-  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.13), 0 10px 28px rgba(0, 0, 0, 0.35);
+  background: rgba(217, 164, 65, 0.1);
+  box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.13), 0 10px 28px rgba(0, 0, 0, 0.35);
   animation: aim-pulse 1.9s ease-in-out infinite;
 }
 
 @keyframes aim-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.13), 0 10px 28px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.13), 0 10px 28px rgba(0, 0, 0, 0.35);
   }
   50% {
-    box-shadow: 0 0 0 5px rgba(201, 162, 39, 0.06), 0 10px 28px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 0 5px rgba(217, 164, 65, 0.06), 0 10px 28px rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -1038,12 +1055,12 @@ select.field option {
 
 .stone-place:hover {
   border-color: var(--border-stone);
-  background: rgba(236, 226, 204, 0.05);
+  background: rgba(243, 233, 214, 0.05);
 }
 
 .stone-row.is-aimed .stone-place {
-  border-color: rgba(201, 162, 39, 0.4);
-  background: rgba(201, 162, 39, 0.12);
+  border-color: rgba(217, 164, 65, 0.4);
+  background: rgba(217, 164, 65, 0.12);
 }
 
 .stone-place-emoji {
@@ -1154,7 +1171,7 @@ select.field option {
   place-items: center;
   border: 1px solid var(--border-stone);
   border-radius: 7px;
-  background: rgba(236, 226, 204, 0.05);
+  background: rgba(243, 233, 214, 0.05);
   color: var(--parchment-dim);
   font-family: var(--font-ui);
   font-size: 15px;
@@ -1165,7 +1182,7 @@ select.field option {
 
 .step-btn:hover {
   border-color: var(--border-strong);
-  background: rgba(201, 162, 39, 0.14);
+  background: rgba(217, 164, 65, 0.14);
   color: var(--gold-pale);
 }
 
@@ -1185,7 +1202,7 @@ select.field option {
 
 .points-input:focus {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.14);
+  box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.14);
   outline: none;
 }
 
@@ -1442,7 +1459,7 @@ select.field option {
 
 .history-result.winner {
   border-color: var(--border-strong);
-  background: rgba(201, 162, 39, 0.12);
+  background: rgba(217, 164, 65, 0.12);
   color: var(--parchment);
 }
 
@@ -1611,7 +1628,7 @@ select.field option {
   height: 36px;
   place-items: center;
   border-radius: 9px;
-  background: rgba(201, 162, 39, 0.12);
+  background: rgba(217, 164, 65, 0.12);
   font-size: 17px;
 }
 
@@ -1751,7 +1768,7 @@ select.field option {
 
 .roster-input:focus-visible {
   border-color: var(--gold);
-  outline: 2px solid rgba(201, 162, 39, 0.3);
+  outline: 2px solid rgba(217, 164, 65, 0.3);
   outline-offset: 1px;
 }
 
@@ -1897,7 +1914,7 @@ select.field option {
   border: 1px solid var(--border-strong);
   border-radius: 100px;
   padding: 5px 14px;
-  background: rgba(201, 162, 39, 0.16);
+  background: rgba(217, 164, 65, 0.16);
   color: var(--gold-pale);
   font-family: var(--font-ui);
   font-size: 11.5px;
@@ -1912,7 +1929,7 @@ select.field option {
 
 .toast-undo:hover {
   border-color: var(--gold);
-  background: rgba(201, 162, 39, 0.3);
+  background: rgba(217, 164, 65, 0.3);
   color: #fff6d6;
 }
 
