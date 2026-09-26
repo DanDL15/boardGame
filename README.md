@@ -95,20 +95,20 @@ Out of the box everything is stored in your browser's `localStorage`:
 **Use _Export_ before switching devices or clearing your browser.** Use _Import_ to restore a
 backup.
 
-## ☁️ One shared live board (30 seconds)
+## ☁️ One shared live board (nothing to do)
 
-Every log appears on every device within a second or two, with no accounts and nothing to
-configure:
+Every device with this page joins the same live board by itself. Log a game anywhere and
+it arrives everywhere within a second or two — no accounts, no codes, no setup.
 
-1. On one device, open the Tower → **Vault → Shared Board** → tap **New code**. Six words
-   appear — that code *is* the password.
-2. On every other device, open the same screen, type the six words, tap **Pair this device**.
+How: the page holds one shared phrase, derives a live channel and an AES-GCM seal from it,
+and publishes the whole board (pinned, so fresh phones get everything instantly) on every
+change. Simultaneous loggers merge by session instead of overwriting; if the channel ever
+drops, the app keeps working locally and catches up. The Vault's Shared Board panel shows
+exactly what sync is doing — if a game ever doesn't arrive, look there first.
 
-That's it. The board rides an encrypted live channel: the channel name and the AES-GCM key
-are both derived from the six words, so anyone holding them can read the scores and nobody
-else can. Newly paired phones get the whole history instantly (the latest board is pinned
-to the channel), simultaneous loggers merge by session instead of overwriting, and if the
-channel ever drops the app keeps working locally and catches up on reconnect.
+Plain-spoken privacy: this obscures the scores from casual eyes but does not lock them —
+the phrase ships in the page source. It's game scores and every change is undoable, but go
+in with eyes open.
 
 ## 🚀 Run it locally
 

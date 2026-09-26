@@ -162,14 +162,10 @@ function cacheDom() {
   dom.streakRows = document.querySelector("#streakRows");
   dom.h2hTable = document.querySelector("#h2hTable");
   dom.formChart = document.querySelector("#formRows");
-  dom.pairCodeInput = document.querySelector("#pairCodeInput");
-  dom.pairGenerateButton = document.querySelector("#pairGenerateButton");
-  dom.pairCodeLine = document.querySelector("#pairCodeLine");
-  dom.pairCodeValue = document.querySelector("#pairCodeValue");
-  dom.syncConnectButton = document.querySelector("#syncConnectButton");
-  dom.syncDisconnectButton = document.querySelector("#syncDisconnectButton");
   dom.syncPushButton = document.querySelector("#syncPushButton");
   dom.syncMessage = document.querySelector("#syncMessage");
+  dom.syncStateLine = document.querySelector("#syncStateLine");
+  dom.syncLog = document.querySelector("#syncLog");
 }
 
 function bindEvents() {
@@ -208,10 +204,7 @@ function bindEvents() {
     filters.player = dom.historyPlayerFilter.value;
     renderHistory();
   });
-  dom.syncConnectButton.addEventListener("click", pairConnect);
-  dom.syncDisconnectButton.addEventListener("click", pairUnpair);
-  dom.syncPushButton.addEventListener("click", pairPushNow);
-  dom.pairGenerateButton.addEventListener("click", pairGenerate);
+  dom.syncPushButton.addEventListener("click", sendBoardNow);
 
   // Number keys aim at a place, Escape stands down — so the whole board is
   // reachable without touching a mouse.
@@ -2029,48 +2022,26 @@ function showToast(message, options) {
   toastTimer = window.setTimeout(() => dom.toast.classList.remove("visible"), undoable ? 6500 : 2800);
 }
 
-/* ═══════════════════════════════ SHARED BOARD (flat code) ═══════════════════════════════
-   Every log must reach every device within a second or two, with no accounts and
-   nothing to configure. So the flat shares one six-word code, and the board rides
-   over a public live channel as an encrypted note:
+/* ═══════════════════════════════ SHARED BOARD (auto-join) ═══════════════════════════════
+   Every log must reach every device within a second or two, with zero setup: no
+   accounts, no codes, no pairing. So every copy of this page joins the flat's live
+   channel by itself, and the board rides over it as an encrypted note.
 
-   - The code IS the password. The channel name is derived from it, and the board
-     itself is sealed with AES-GCM under a key derived from it. Anyone holding the
-     six words can read the scores; nobody else can.
-   - One device taps "New code", the rest type the six words once. That's the whole
-     setup. The code lives in per-device localStorage, never in exports.
-   - Every change publishes the whole board (retained), so a newly paired phone
+   - The channel name and the AES-GCM seal both derive from one phrase baked into
+     the page. Every device computes the same channel, so they all meet there.
+   - Every change publishes the whole board (retained), so a phone opened fresh
      gets everything instantly. Merges are by session id, newest `updated` wins,
      so two flatmates logging at once don't wipe each other out.
    - The channel is just transport. If it ever drops, the app works locally and
-     catches up on reconnect.
+     catches up on reconnect. The Vault shows exactly what sync is doing.
+   - Plain-spoken privacy: this obscures the scores from casual eyes but does not
+     lock them — anyone reading the page source could join the channel. It's game
+     scores, and every change is undoable, but go in with eyes open.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const REMOTE_KEY = "tower-remote-v1";
 const PAIR_BROKER = "wss://broker.hivemq.com:8884/mqtt";
 const PAIR_LIB = "https://unpkg.com/mqtt/dist/mqtt.min.js";
-const PAIR_WORDS = 6;
-
-const WORDS = (
-  "ash beech birch elm hazel oak willow alder yew pine cedar holly juniper maple rowan " +
-  "tower stone stair crown gate arch keep moat spire vault lantern beacon banner shield " +
-  "sword helm cloak drum horn bell lamp chain rope nail anvil forge mill wheel plough " +
-  "field meadow brook river lake mist rain snow hail frost dew fog cloud storm gale " +
-  "dawn dusk noon night star moon sun ember flame smoke ashwood ironwood goldleaf " +
-  "silver copper bronze amber pearl coral shell finch wren crow raven owl hawk lark " +
-  "fox hare deer boar wolf bear otter vole mouse shrew mole bat frog toad newt adder " +
-  "trout salmon pike perch roach bream apple pear plum cherry berry nut grain barley " +
-  "oats wheat rye honey mead ale bread cheese butter milk honeycomb feast board game " +
-  "dice token pawn knight bishop castle queen king rook lance bow arrow quiver target " +
-  "harp lute drum pipe song tale riddle jest laugh cheer brave bold keen swift sure " +
-  "calm bright clear deep high far near long short wide narrow steep level rocky mossy " +
-  "ferny heathery grassy stony sandy pebbly misty rainy snowy windy sunny starry moony " +
-  "amber ivy fern moss lichen clover thistle thorn bramble briar reed sedge rush grass " +
-  "north south east west hill glen crag tor fell moor bog marsh pond pool stream burn " +
-  "isle skerry firth loch ben brae strath kyle ness holm ey ford bridge path road track " +
-  "trail stair gate door hatch latch hinge beam post plank slate tile thatch turf wattle " +
-  "daub lime sand clay chalk flint quartz granite basalt marble alabaster jet opal topaz"
-).split(/\s+/).filter((w, i, all) => w && all.indexOf(w) === i).slice(0, 256);
+const FLAT_PHRASE = "hazel tower lantern mossy crown beacon";
 
 let pair = null;
 let pairClient = null;
@@ -2078,7 +2049,7 @@ let pairLibPromise = null;
 let pushTimer = 0;
 let lastPullAt = 0;
 let lastMetaAt = "";
-let boardDigest = "";
+const syncEvents = [];
 
 /* Fast non-crypto hash for channel names and change detection. */
 function hash53(str) {
@@ -2097,12 +2068,6 @@ function normalizeCode(value) {
   return String(value || "").toLowerCase().trim().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean).join(" ");
 }
 
-function validCode(value) {
-  const words = normalizeCode(value).split(" ").filter(Boolean);
-  if (words.length !== PAIR_WORDS) return false;
-  return words.every((w) => WORDS.includes(w));
-}
-
 function topicFor(code) {
   return `thetower/${hash53(`channel::${normalizeCode(code)}`)}`;
 }
@@ -2111,41 +2076,33 @@ function digestSessions(sessions) {
   return hash53(JSON.stringify(sessions.map((s) => [s.id, s.updated, s.results.map((r) => [r.player, r.position, r.points, r.team])])));
 }
 
-function loadPair() {
-  try {
-    const raw = window.localStorage.getItem(REMOTE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && validCode(parsed.code)) return { code: normalizeCode(parsed.code) };
-  } catch (error) {
-    console.warn("Could not read pair code", error);
-  }
-  return null;
-}
-
 function initPair() {
-  pair = loadPair();
-  if (pair) {
-    if (dom.pairCodeInput) dom.pairCodeInput.value = pair.code;
-    showPairCode();
-    setSyncMessage("Paired — joining the live board…");
-    pairConnectClient();
-  } else {
-    setSyncMessage("");
-    updateSyncStatus();
-  }
-  window.addEventListener("online", () => {
-    if (pair) pairConnectClient();
-  });
+  // No pairing step: every device joins the flat's channel by itself.
+  pair = { code: FLAT_PHRASE };
+  setSyncState("joining", "Joining…");
+  setSyncMessage("");
+  updateSyncStatus();
+  logSync("joining the shared board…");
+  pairConnectClient();
+  window.addEventListener("online", () => pairConnectClient());
 }
 
-function showPairCode() {
-  if (!dom.pairCodeLine) return;
-  if (pair) {
-    dom.pairCodeValue.textContent = pair.code;
-    dom.pairCodeLine.hidden = false;
-  } else {
-    dom.pairCodeLine.hidden = true;
+function setSyncState(kind, text) {
+  if (!dom.syncStateLine) return;
+  dom.syncStateLine.textContent = text;
+  dom.syncStateLine.classList.toggle("is-live", kind === "live");
+}
+
+function logSync(text) {
+  syncEvents.push({ at: new Date(), text });
+  while (syncEvents.length > 8) syncEvents.shift();
+  if (!dom.syncLog) return;
+  dom.syncLog.replaceChildren();
+  for (const event of [...syncEvents].reverse()) {
+    const li = make("li", "");
+    const time = make("time", "", event.at.toLocaleTimeString());
+    li.append(time, make("span", "", event.text));
+    dom.syncLog.appendChild(li);
   }
 }
 
@@ -2156,17 +2113,16 @@ function setSyncMessage(message, type) {
 }
 
 function updateSyncStatus() {
+  const live = Boolean(pairClient && pairClient.connected);
   if (dom.syncStatus) {
-    dom.syncStatus.textContent = pair
+    dom.syncStatus.textContent = live
       ? "Five souls, one crown · live shared board"
-      : "Five souls, one crown · this device only";
+      : "Five souls, one crown · joining…";
   }
   if (dom.storageStatus) {
-    dom.storageStatus.textContent = pairClient && pairClient.connected
+    dom.storageStatus.textContent = live
       ? `Shared board live${lastPullAt ? ` · updated ${new Date(lastPullAt).toLocaleTimeString()}` : ""}`
-      : pair
-        ? "Paired — reconnecting…"
-        : "Saved on this device only";
+      : "Joining the shared board…";
   }
 }
 
@@ -2230,6 +2186,10 @@ function loadPairLib() {
   if (window.mqtt) return Promise.resolve();
   if (pairLibPromise) return pairLibPromise;
   pairLibPromise = new Promise((resolve, reject) => {
+    if (!document.head) {
+      reject(new Error("no document head"));
+      return;
+    }
     const script = document.createElement("script");
     script.src = PAIR_LIB;
     script.async = true;
@@ -2242,16 +2202,17 @@ function loadPairLib() {
 }
 
 async function pairConnectClient() {
-  if (!pair) return;
+  setSyncState("joining", "Joining…");
   try {
     await loadPairLib();
   } catch (error) {
     console.warn("Pair transport unavailable", error);
+    logSync(`couldn't start live sync: ${error.message} — saving here`);
+    setSyncState("joining", "Offline — saving on this device");
     setSyncMessage("Live sync couldn't start (network?). Your games are still safe here.", "error");
     updateSyncStatus();
     return;
   }
-  if (!pair) return;
   try {
     if (pairClient) {
       try { pairClient.end(true); } catch (e) { /* replacing */ }
@@ -2267,10 +2228,13 @@ async function pairConnectClient() {
     client.on("connect", () => {
       client.subscribe(topic, { qos: 1 }, (err) => {
         if (err) {
-          setSyncMessage("Paired but the channel wouldn't open — still saving here.", "error");
+          logSync("channel wouldn't open — saving here");
+          setSyncMessage("The channel wouldn't open — still saving here.", "error");
           return;
         }
-        setSyncMessage("Live — every game appears on all paired devices within seconds.");
+        logSync("live — joined the shared board");
+        setSyncState("live", "Live — every game appears everywhere by itself");
+        setSyncMessage("");
         updateSyncStatus();
         publishBoard(); // announce presence + share what we hold
       });
@@ -2279,53 +2243,74 @@ async function pairConnectClient() {
       if (arrivedTopic !== topic) return;
       receiveBoard(String(payload));
     });
-    client.on("reconnect", updateSyncStatus);
-    client.on("close", updateSyncStatus);
+    client.on("reconnect", () => {
+      setSyncState("joining", "Reconnecting…");
+      logSync("reconnecting…");
+      updateSyncStatus();
+    });
+    client.on("close", () => {
+      setSyncState("joining", "Reconnecting…");
+      updateSyncStatus();
+    });
     client.on("error", () => {
+      logSync("a sync hiccup — saving here, will catch up");
       setSyncMessage("Live sync hiccup — still saving on this device, will catch up.", "error");
     });
   } catch (error) {
     console.warn("Pair connect failed", error);
+    logSync(`couldn't join: ${error.message}`);
   }
 }
 
 /* Debounced: roster typing saves constantly, the channel shouldn't flap. */
 function pushToRemote() {
-  if (!pair) return;
   window.clearTimeout(pushTimer);
   pushTimer = window.setTimeout(() => publishBoard(), 1200);
 }
 
+/* Merge two session lists by id — newest `updated` wins each id. */
+function mergeSessions(local, incoming) {
+  const byId = new Map();
+  for (const session of local) byId.set(session.id, session);
+  for (const session of incoming) {
+    const current = byId.get(session.id);
+    if (!current || String(session.updated || "") >= String(current.updated || "")) {
+      byId.set(session.id, session);
+    }
+  }
+  return [...byId.values()].sort(compareSessions);
+}
+
 async function publishBoard() {
-  if (!pair || !pairClient || !pairClient.connected) return;
+  if (!pairClient || !pairClient.connected) return;
   try {
     const sealed = await sealBoard(pair.code);
     pairClient.publish(topicFor(pair.code), sealed, { qos: 1, retain: true }, (err) => {
-      if (err) console.warn("Publish failed", err);
+      if (err) {
+        console.warn("Publish failed", err);
+        logSync(`couldn't send: ${err.message || err}`);
+      } else {
+        logSync(`sent ${state.sessions.length} sessions`);
+      }
     });
   } catch (error) {
     console.warn("Seal failed", error);
+    logSync(`couldn't seal the board: ${error.message}`);
   }
 }
 
-async function pairPushNow() {
+async function sendBoardNow() {
   window.clearTimeout(pushTimer);
-  if (!pair) {
-    showToast("Pair a flat code first — Vault, bottom of the page.");
-    switchTab("vault");
-    return;
-  }
   await publishBoard();
   showToast("Sent to the flat.");
 }
 
 async function receiveBoard(raw) {
-  if (!pair) return;
   let envelope;
   try {
     envelope = await openBoard(pair.code, raw);
   } catch (error) {
-    return; // another code's noise, or a garbled note — ignore
+    return; // garbled note — ignore
   }
   if (!envelope || !envelope.doc || !Array.isArray(envelope.doc.sessions)) return;
   const incoming = normalizeState({
@@ -2334,6 +2319,7 @@ async function receiveBoard(raw) {
     gameEmoji: envelope.doc.gameEmoji || state.gameEmoji,
     sessions: envelope.doc.sessions,
   });
+  const before = state.sessions.length;
   const mergedSessions = mergeSessions(state.sessions, incoming.sessions);
   const incomingAt = String(envelope.at || "");
   const useIncomingMeta = incomingAt && (!lastMetaAt || incomingAt >= lastMetaAt);
@@ -2365,71 +2351,9 @@ async function receiveBoard(raw) {
   resetForm(localDraft ? { draft: localDraft } : undefined);
   if (keepEditing && !state.sessions.some((s) => s.id === keepEditing)) cancelEdit();
   updateSyncStatus();
+  const gained = mergedSessions.length - before;
+  logSync(gained > 0 ? `received ${gained} new game${gained === 1 ? "" : "s"} from the flat` : "board updated from the flat");
   showToast("New game arrived from the flat.");
-}
-
-function pairGenerate() {
-  const words = [];
-  const pool = new Uint32Array(PAIR_WORDS);
-  window.crypto.getRandomValues(pool);
-  for (let i = 0; i < PAIR_WORDS; i++) words.push(WORDS[pool[i] % WORDS.length]);
-  const code = words.join(" ");
-  storePair(code);
-  if (dom.pairCodeInput) dom.pairCodeInput.value = code;
-  showToast("Flat code created — read it to the flat.");
-}
-
-function storePair(code) {
-  pair = { code: normalizeCode(code) };
-  try {
-    window.localStorage.setItem(REMOTE_KEY, JSON.stringify(pair));
-  } catch (error) {
-    console.warn("Could not store pair code", error);
-  }
-  showPairCode();
-  updateSyncStatus();
-  pairConnectClient();
-}
-
-function pairConnect() {
-  const code = dom.pairCodeInput.value;
-  if (!validCode(code)) {
-    setSyncMessage("Type the six words exactly as shown on the other device — or tap New code here and read yours out.", "error");
-    return;
-  }
-  storePair(code);
-  setSyncMessage("Paired — joining the live board…");
-  showToast("Paired. New games now arrive by themselves.");
-}
-
-function pairUnpair() {
-  pair = null;
-  lastMetaAt = "";
-  try {
-    if (pairClient) pairClient.end(true);
-  } catch (error) { /* already gone */ }
-  pairClient = null;
-  try {
-    window.localStorage.removeItem(REMOTE_KEY);
-  } catch (error) {
-    console.warn("Could not clear pair code", error);
-  }
-  showPairCode();
-  setSyncMessage("Unpaired — this device keeps its own copy from here.");
-  updateSyncStatus();
-}
-
-/* Merge two session lists by id — newest `updated` wins each id. */
-function mergeSessions(local, incoming) {
-  const byId = new Map();
-  for (const session of local) byId.set(session.id, session);
-  for (const session of incoming) {
-    const current = byId.get(session.id);
-    if (!current || String(session.updated || "") >= String(current.updated || "")) {
-      byId.set(session.id, session);
-    }
-  }
-  return [...byId.values()].sort(compareSessions);
 }
 
 /* saveState() pushes; the receive path must write without pushing back. */

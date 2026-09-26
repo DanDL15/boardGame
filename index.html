@@ -267,29 +267,15 @@
             <div class="settings-content">
               <div class="settings-block settings-block-wide">
                 <p class="mini-label">Live sync</p>
-                <h3>Share Across Devices</h3>
+                <h3>Shared Board</h3>
                 <p class="muted-copy">
-                  One device taps <strong>New code</strong> and shows six words. Every other device
-                  types those words once. From then on every game appears everywhere within a
-                  second or two — no accounts, nothing to configure. The words are the password:
-                  anyone holding them can read the scores, nobody else can.
+                  Every device with this page joins the same live board by itself. Log a game
+                  anywhere and it arrives everywhere within a second or two — nothing to set up,
+                  no accounts, no codes. If a game ever doesn't appear, the log below says why.
                 </p>
-                <p class="pair-code-line" id="pairCodeLine" hidden>
-                  This flat's code: <strong id="pairCodeValue"></strong>
-                </p>
-                <div class="sync-grid">
-                  <div class="setup-field">
-                    <label for="pairCodeInput">Flat code (six words)</label>
-                    <input class="field" id="pairCodeInput" type="text" placeholder="e.g. hazel tower lantern …" autocomplete="off" autocapitalize="off" spellcheck="false" />
-                  </div>
-                  <div class="setup-field">
-                    <label aria-hidden="true">&nbsp;</label>
-                    <button class="button button-secondary" id="pairGenerateButton" type="button">New code</button>
-                  </div>
-                </div>
+                <p class="sync-state" id="syncStateLine" role="status" aria-live="polite">Joining…</p>
+                <ul class="sync-log" id="syncLog" aria-label="Sync activity"></ul>
                 <div class="settings-buttons">
-                  <button class="button button-primary" id="syncConnectButton" type="button">Pair this device</button>
-                  <button class="button button-secondary" id="syncDisconnectButton" type="button">Unpair</button>
                   <button class="button button-secondary" id="syncPushButton" type="button">Send now ↑</button>
                 </div>
                 <p class="settings-message" id="syncMessage" role="status" aria-live="polite"></p>

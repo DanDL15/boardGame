@@ -2526,24 +2526,54 @@ select.field option {
   gap: 12px;
 }
 
-.pair-code-line {
-  margin: 0 0 14px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  background: rgba(118, 183, 42, 0.08);
-  color: var(--parchment-dim);
-  font-size: 13px;
+.sync-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 10px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
-.pair-code-line[hidden] {
-  display: none;
+.sync-state::before {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  content: "";
+  background: var(--iron);
 }
 
-.pair-code-line strong {
+.sync-state.is-live::before {
+  background: var(--leaf);
+  box-shadow: 0 0 10px rgba(118, 183, 42, 0.8);
+}
+
+.sync-state.is-live {
   color: var(--leaf-pale);
-  font-size: 15px;
-  letter-spacing: 0.02em;
+}
+
+.sync-log {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  max-height: 150px;
+  overflow-y: auto;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--parchment-faint);
+}
+
+.sync-log li {
+  display: flex;
+  gap: 8px;
+}
+
+.sync-log time {
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 @media (max-width: 680px) {

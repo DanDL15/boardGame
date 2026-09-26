@@ -395,16 +395,12 @@ if (!FATAL) {
   assert(normUpdated.sessions.filter(function (s) { return s.id === "m1"; })[0].updated === "2025-09-02T10:00:00.000Z",
     "export/import round trip preserves updated stamps");
 
-  /* ═════ FLAT-CODE PAIRING (pure logic — no network) ═════ */
-  assert(WORDS.length >= 128, "word pool is big enough to type from (" + WORDS.length + ")");
+  /* ═════ SHARED BOARD (pure logic — no network) ═════ */
   assert(normalizeCode("  Hazel   TOWER Lantern ") === "hazel tower lantern", "codes normalize case and spacing");
-  assert(validCode("nope nope nope nope nope nope") === false, "random words are rejected");
-  assert(validCode([WORDS[0], WORDS[1], WORDS[2], WORDS[3], WORDS[4], WORDS[5]].join(" ")) === true,
-    "six pool words validate");
-  assert(validCode([WORDS[0], WORDS[1]].join(" ")) === false, "short codes are rejected");
   assert(topicFor("hazel tower") === topicFor("  HAZEL tower ") && topicFor("hazel tower").indexOf("thetower/") === 0,
     "channel names are stable and namespaced");
-  assert(topicFor("hazel tower") !== topicFor("hazel spire"), "different codes get different channels");
+  assert(topicFor("hazel tower") !== topicFor("hazel spire"), "different phrases get different channels");
+  assert(typeof FLAT_PHRASE === "string" && FLAT_PHRASE.split(" ").length >= 4, "a fixed flat phrase is baked in");
   assert(digestSessions(localSess) !== digestSessions(incomingSess), "board digests tell changed boards apart");
 }
 __log.join("\n")
